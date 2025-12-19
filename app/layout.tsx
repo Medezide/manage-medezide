@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Create Next App",
-  description: "HELLO WOLRD MEDEZIDE",
+  title: "Manage Medezide",
+  description: "Create Next App",
 };
 
 export default function RootLayout({
