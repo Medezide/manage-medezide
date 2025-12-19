@@ -69,7 +69,7 @@ def run_scraper():
     parameters = {
         "token" : DIFFBOT_API_TOKEN,
         "query" : DIFFBOT_QUERY,
-        "size" : 2, # Sat op til 25 igen
+        "size" : 5, # Sat op til 25 igen
         "json" : True
     }
     
@@ -98,6 +98,24 @@ def run_scraper():
         summary_highlighted = highlight_keywords(raw_text, length=300)
         full_text_highlighted = highlight_keywords(raw_html, length=None)
         relevance = get_relevance_reason(raw_text, [t.get('label', '') for t in article.get('tags', [])])
+
+        pub_date = "Ukendt dato"
+        diffbot_date = article.get('date')
+
+        if diffbot_date:
+            # Hvis det er en ordbog (dict), hent 'str' nøglen
+            if isinstance(diffbot_date, dict):
+                pub_date = diffbot_date.get('str', 'Ukendt dato')
+            # Hvis det allerede er en streng, brug den direkte
+            elif isinstance(diffbot_date, str):
+                pub_date = diffbot_date
+            
+            # Rens datoen for det mærkelige 'd' hvis det findes (d2025 -> 2025)
+            if pub_date.startswith('d') and pub_date[1].isdigit():
+                pub_date = pub_date[1:]
+
+
+
 
         clean_obj = {
             "title": article.get('title', 'Uden titel'),

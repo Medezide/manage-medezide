@@ -1,15 +1,37 @@
 "use client";
 import { useState } from 'react';
-// VIGTIGT: Vi går to mapper tilbage (../../) for at finde data-mappen i roden
 import newsData from '../../data/amr_news.json'; 
 
 export default function NewsPage() {
   const [selectedArticle, setSelectedArticle] = useState<any>(null);
 
+  // Hjælpefunktion til at gøre datoen pæn (f.eks. "19. dec. 2025")
+const formatDate = (dateString: string) => {
+    if (!dateString || dateString === "Ukendt dato") return "";
+
+    // 1. Rens datoen hvis den stadig har 'd' foran (fx "d2025...")
+    let cleanString = dateString;
+    if (dateString.startsWith('d') && !isNaN(Number(dateString[1]))) {
+        cleanString = dateString.substring(1);
+    }
+
+    // 2. Prøv at lave den til en dato
+    const date = new Date(cleanString);
+
+    // 3. Tjek om datoen er gyldig (isValid)
+    if (isNaN(date.getTime())) {
+        // Hvis den stadig er ugyldig, returner bare den rå tekst i stedet for "Invalid Date"
+        return cleanString; 
+    }
+
+    // 4. Returner pæn dansk dato
+    return date.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
   return (
     <main style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', padding: '40px', fontFamily: 'sans-serif', color: '#1f2937' }}>
       
-      {/* HEADER MED TILBAGE-KNAP */}
+      {/* HEADER */}
       <header style={{ textAlign: 'center', marginBottom: '40px', maxWidth: '1200px', margin: '0 auto 40px' }}>
         <a href="/" style={{ display: 'inline-block', marginBottom: '20px', textDecoration: 'none', color: '#6b7280', fontWeight: 600 }}>← Tilbage til forsiden</a>
         <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', fontWeight: 800 }}>🦠 AMR Intelligence Monitor</h1>
@@ -45,8 +67,15 @@ export default function NewsPage() {
 
             {/* KORT INDHOLD */}
             <div style={{ padding: '20px', flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', marginBottom: '5px' }}>
-                {article.source}
+              
+              {/* --- NYT: DATO OG KILDE --- */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                 <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>
+                    {article.source}
+                 </span>
+                 <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                    {formatDate(article.date)}
+                 </span>
               </div>
               
               <div style={{ fontSize: '0.75rem', color: '#d97706', fontWeight: 600, marginBottom: '10px' }}>
@@ -67,15 +96,9 @@ export default function NewsPage() {
               <button 
                 onClick={() => setSelectedArticle(article)}
                 style={{
-                  background: 'none',
-                  border: '1px solid #2563eb',
-                  color: '#2563eb',
-                  padding: '8px 15px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  width: '100%',
-                  marginBottom: '15px'
+                  background: 'none', border: '1px solid #2563eb', color: '#2563eb',
+                  padding: '8px 15px', borderRadius: '6px', cursor: 'pointer',
+                  fontWeight: 600, width: '100%', marginBottom: '15px'
                 }}
               >
                 📖 Læs hele artiklen
@@ -91,8 +114,7 @@ export default function NewsPage() {
 
               <div style={{ width: '100%', height: '4px', backgroundColor: '#e5e7eb', borderRadius: '2px' }}>
                 <div style={{
-                   height: '100%',
-                   borderRadius: '2px',
+                   height: '100%', borderRadius: '2px',
                    width: `${Math.abs(article.sentiment_score) * 100}%`,
                    backgroundColor: article.sentiment_score > 0.1 ? '#10b981' : article.sentiment_score < -0.1 ? '#ef4444' : '#9ca3af',
                    marginLeft: article.sentiment_score > 0 ? '0' : 'auto',
@@ -127,10 +149,13 @@ export default function NewsPage() {
             </div>
             
             <div style={{ padding: '30px', overflowY: 'auto', fontSize: '1.1rem', lineHeight: 1.6 }}>
-              <h2 style={{ fontSize: '1.8rem', marginBottom: '10px', fontWeight: 800 }}>{selectedArticle.title}</h2>
+              <h2 style={{ fontSize: '1.8rem', marginBottom: '5px', fontWeight: 800 }}>{selectedArticle.title}</h2>
+              
+              {/* DATO I MODAL OGSÅ */}
               <div style={{ color: '#6b7280', marginBottom: '20px', fontSize: '0.9rem' }}>
-                Kilde: {selectedArticle.source} | <a href={selectedArticle.url} target="_blank" style={{ color: '#2563eb' }}>Gå til original</a>
+                {formatDate(selectedArticle.date)} • {selectedArticle.source} | <a href={selectedArticle.url} target="_blank" style={{ color: '#2563eb' }}>Gå til original</a>
               </div>
+              
               <div dangerouslySetInnerHTML={{ __html: selectedArticle.full_content_html }} />
             </div>
           </div>
