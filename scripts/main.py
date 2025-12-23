@@ -3,12 +3,27 @@ import json
 import os
 from dotenv import load_dotenv
 import re
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import firestore
+
+
+
+cred = credentials.Certificate("serviceAccountKey.json")
+firebase_admin.initialize_app(cred)
+
+
+
+
 
 # 1. SETUP STIER (PATHS)
 # Vi finder roden af projektet ved at gå én gang op fra 'scripts' mappen
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data') # Her skal JSON-filen lande
 ENV_PATH = os.path.join(BASE_DIR, '.env') # <-- NYT: Stien til din .env fil
+
+
+SERVICE_ACCOUNT_KEY_PATH = os.path.join(BASE_DIR, 'serviceAccountKey.json')
 
 # Sørg for at data-mappen findes
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -22,6 +37,19 @@ if not DIFFBOT_API_TOKEN:
     print("❌ FEJL: Kunne ikke finde DIFFBOT_TOKEN.")
     print(f"   Tjek at filen findes her: {ENV_PATH}")
     print("   Og at den indeholder: DIFFBOT_TOKEN=din_nøgle")
+    exit()
+
+
+# Initialize Firebase Admin SDK
+try:
+    if not firebase_admin._apps: # Check if app is not already initialized
+        cred = credentials.Certificate(SERVICE_ACCOUNT_KEY_PATH)
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+    print("✅ Firebase Admin SDK initialized successfully.")
+except Exception as e:
+    print(f"❌ FEJL: Kunne ikke initialisere Firebase Admin SDK: {e}")
+    print(f"   Tjek at service account key filen findes her: {SERVICE_ACCOUNT_KEY_PATH}")
     exit()
 
 # Din Query (Du bruger den Engelske her - hvis du vil have den Nordiske, skal du skifte denne tekst ud)
@@ -61,6 +89,27 @@ def get_relevance_reason(text, tags):
         return f"🔥 Matcher: {', '.join(list(set(hits))[:3])}"
     return "Generel sundhed"
 
+
+
+
+# NEW FUNCTION: To send data to Firestore
+def send_to_firestore(collection_name: str, data: dict):
+    """
+    Sends a single document to a specified Firestore collection.
+    Args:
+        collection_name: The name of the Firestore collection.
+        data: A dictionary containing the document data.
+    Returns:
+        The ID of the newly created document, or None if an error occurred.
+    """
+    try:
+        doc_ref = db.collection(collection_name).add(data)
+        print(f"📝 Successfully added document with ID: {doc_ref[1].id} to collection '{collection_name}'")
+        return doc_ref[1].id
+    except Exception as e:
+        print(f"❌ Error adding document to Firestore: {e}")
+        return None
+
 def run_scraper():
     # 1. Hent data fra Diffbot
     print("🚀 Starter Diffbot download...")
@@ -69,7 +118,7 @@ def run_scraper():
     parameters = {
         "token" : DIFFBOT_API_TOKEN,
         "query" : DIFFBOT_QUERY,
-        "size" : 5, # Sat op til 25 igen
+        "size" : 1, # Sat op til 25 igen
         "json" : True
     }
     
@@ -87,6 +136,7 @@ def run_scraper():
     print(f"📥 Fandt {len(raw_list)} artikler. Behandler nu...")
 
     clean_articles = []
+    firestore_collection_name = 'news-unresolved'
 
     # 2. Behandl data og tilføj highlights
     for item in raw_list:
@@ -133,6 +183,13 @@ def run_scraper():
             "sentiment_score": article.get('sentiment', 0)
         }
         clean_articles.append(clean_obj)
+
+        # NEW: Send the clean_obj to Firestore
+        send_to_firestore(firestore_collection_name, clean_obj)
+
+        # 3. Gem til Next.js data mappen
+        output_file = os.path.join(DATA_DIR, 'amr_news.json')
+
 
     # 3. Gem til Next.js data mappen
     output_file = os.path.join(DATA_DIR, 'amr_news.json')
