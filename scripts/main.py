@@ -118,7 +118,7 @@ def run_scraper():
     parameters = {
         "token" : DIFFBOT_API_TOKEN,
         "query" : DIFFBOT_QUERY,
-        "size" : 1, # Sat op til 25 igen
+        "size" : 5, # Sat op til 25 igen
         "json" : True
     }
     
@@ -186,9 +186,6 @@ def run_scraper():
 
         # NEW: Send the clean_obj to Firestore
         send_to_firestore(firestore_collection_name, clean_obj)
-
-        # 3. Gem til Next.js data mappen
-        output_file = os.path.join(DATA_DIR, 'amr_news.json')
 
 
     # 3. Gem til Next.js data mappen
