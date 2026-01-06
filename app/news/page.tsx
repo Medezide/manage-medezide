@@ -303,7 +303,7 @@ export default function NewsPage() {
           </div>
         </div>
       )}
-      
+       
       {/* Existing Styles */}
       <style jsx global>{`
         /* ... Keep your existing styles ... */
