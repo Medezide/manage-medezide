@@ -12,7 +12,7 @@ export async function sendBacklogEmail(article: any, categories: string) {
         pass: process.env.GMAIL_PASS,    // Skift til koden fra Trin 2 (uden mellemrum)
     },
   });
-
+  // YEEEE HAW! BABY YES SIRSKIE!
   // Vi formatterer emnet præcis som på dit billede:
   // "Cell Membranes... /// 01 & 25"  
   const subjectLine = `${article.title} /// ${categories}`;
