@@ -14,11 +14,11 @@ export async function sendBacklogEmail(article: any, categories: string) {
   });
 
   // Vi formatterer emnet præcis som på dit billede:
-  // "Cell Membranes... /// 01 & 25"
+  // "Cell Membranes... /// 01 & 25"  
   const subjectLine = `${article.title} /// ${categories}`;
 
   const mailOptions = {
-    from: '"AMR System" <DIN_EMAIL@gmail.com>',
+    from: `"AMR System" <${process.env.GMAIL_USER}>`,
     to: "backlog@medezide.com", 
     subject: subjectLine,
     // Kroppen af mailen er nu kun linket, præcis som på billedet

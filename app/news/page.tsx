@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy, writeBatch, deleteDoc, doc } from 'firebase/firestore';
 import { sendBacklogEmail } from "@/app/actions";
-import newsData from '../../data/amr_news.json'; 
+// newsData importen slettet, da den ikke bruges
 
 interface NewsArticle {
   id: string;
@@ -11,7 +11,7 @@ interface NewsArticle {
   source: string;
   url: string;
   image: string;
-  date: string; // Updated from 'date' to match Firestore
+  date: string; // <--- ÆNDRET: Fra 'date' til 'publicationdate' (matcher DB)
   summary_html: string;
   full_content_html: string;
   relevance_msg: string;
@@ -24,18 +24,21 @@ export default function NewsPage() {
   const [news, setNews] = useState<NewsArticle[]>([]); 
   const [loading, setLoading] = useState(true);
 
-  const [categoryInput, setCategoryInput] = useState(""); // <--- NYT
+  // <--- ÆNDRET: Vi gemmer nu input for ALLE artikler i et objekt, i stedet for én streng
+  // Før: const [categoryInput, setCategoryInput] = useState("");
+  const [categoryInputs, setCategoryInputs] = useState<{[key: string]: string}>({}); 
 
   useEffect(() => {
     const fetchNews = async () => {
       try {
+        // <--- ÆNDRET: Sorterer efter 'publicationdate' i stedet for 'date'
         const q = query(collection(db, "news-unresolved"), orderBy("date", "desc")); 
         const querySnapshot = await getDocs(q);
         
         const articles = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        })) as NewsArticle[]; // Force TypeScript to treat this as NewsArticle
+        })) as NewsArticle[];
 
         setNews(articles);
       } catch (error) {
@@ -48,18 +51,21 @@ export default function NewsPage() {
     fetchNews();
   }, []);
 
-  // 2. MANGLENDE RESET: Tøm inputfeltet når modal åbnes
-  useEffect(() => {
-    if (selectedArticle) {
-        setCategoryInput(""); // <--- NYT
-    }
-  }, [selectedArticle]);
+  // Slettet useEffect til reset af input, da det ikke længere er nødvendigt med den nye struktur
 
-  // 2. THE NEW "MOVE" FUNCTION
-  // 2. THE NEW "MOVE" FUNCTION
+  // <--- NYT: Hjælpefunktion til at håndtere input for et specifikt kort
+  const handleInputChange = (id: string, value: string) => {
+    setCategoryInputs(prev => ({
+        ...prev,
+        [id]: value
+    }));
+  };
+
   const handleResolve = async (article: NewsArticle) => {
+    // <--- ÆNDRET: Henter inputtet specifikt for denne artikel
+    const currentInput = categoryInputs[article.id] || "";
 
-    if (!categoryInput.trim()) {
+    if (!currentInput.trim()) {
         alert("Du skal indtaste Kategori ID.");
         return;
     }
@@ -67,14 +73,13 @@ export default function NewsPage() {
     if (!confirm("Er du færdig med at behandle denne nyhed?")) return;
 
     try {
-        // 1. DATABASE FLYTNING
         const batch = writeBatch(db);
         const originalRef = doc(db, "news-unresolved", article.id);
         const newRef = doc(db, "news-resolved", article.id);
 
         const articleWithCategories = {
             ...article,
-            assigned_categories: categoryInput,
+            assigned_categories: currentInput, // <--- ÆNDRET: Bruger currentInput
             resolved_at: new Date().toISOString()
         };
 
@@ -82,18 +87,20 @@ export default function NewsPage() {
         batch.delete(originalRef);
         await batch.commit();
 
-        // 2. SEND MAIL (Kalder Server Action)
-        const emailResult = await sendBacklogEmail(article, categoryInput);
+        const emailResult = await sendBacklogEmail(article, currentInput); // <--- ÆNDRET: Sender currentInput
 
         if (emailResult.success) {
-             alert("Nyhed arkiveret og mail sendt succesfuldt!");
+             // alert("Succes"); // Kan udkommenteres for hurtigere workflow
         } else {
-             alert("Nyhed arkiveret, men MAIL FEJLEDE. Tjek server logs.");
+             alert("Nyhed arkiveret, men MAIL FEJLEDE.");
         }
 
-        // 3. Opdater UI
         setNews(prevNews => prevNews.filter(item => item.id !== article.id));
-        setSelectedArticle(null);
+        
+        // <--- NYT: Rydder inputtet op for den slettede artikel
+        const newInputs = {...categoryInputs};
+        delete newInputs[article.id];
+        setCategoryInputs(newInputs);
 
     } catch (error) {
         console.error("Fejl:", error);
@@ -101,36 +108,25 @@ export default function NewsPage() {
     }
   };
 
-
-  // 3. NY FUNKTION: SLET FULDSTÆNDIGT (Den røde knap)
   const handleDelete = async (article: NewsArticle) => {
-    if (!confirm("Er du sikker? Dette vil slette nyheden PERMANENT fra databasen.")) return;
+    if (!confirm("Er du sikker? Slettes permanent.")) return;
 
     try {
-        // Vi sletter bare dokumentet direkte fra 'news-unresolved'
         await deleteDoc(doc(db, "news-unresolved", article.id));
-
-        // Opdater skærmen med det samme
         setNews(prevNews => prevNews.filter(item => item.id !== article.id));
-        setSelectedArticle(null); // Luk vinduet
-        
-        // Ingen alert nødvendig her, det skal bare gå hurtigt
+        // setSelectedArticle(null) fjernet, da vi sletter direkte fra listen nu
     } catch (error) {
         console.error("Fejl ved sletning:", error);
         alert("Kunne ikke slette nyheden.");
     }
   };
 
-
   const formatDate = (dateString: string) => {
     if (!dateString || dateString === "Ukendt dato") return "";
-    
-    // Clean up "d2025..." format if present
     let cleanString = dateString;
     if (dateString.startsWith('d') && !isNaN(Number(dateString[1]))) {
         cleanString = dateString.substring(1);
     }
-    
     const date = new Date(cleanString);
     if (isNaN(date.getTime())) return cleanString; 
     return date.toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -159,49 +155,76 @@ export default function NewsPage() {
             {news.map((article, index) => (
             <article key={article.id || index} className="card">
                 
-                {/* IMAGE */}
-                <div className="card-image-wrapper">
-                <img 
-                    src={article.image || "https://placehold.co/600x400?text=No+Image"} 
-                    alt="News" 
-                    className="card-image"
-                />
-                <div className="card-source-badge">{article.source}</div>
-                </div>
-
-                {/* BODY */}
-                <div className="card-body">
-                <div className="meta-row">
-                    <span className="date">{formatDate(article.date)}</span>
-                    <div className="sentiment-wrapper" title={`Sentiment: ${article.sentiment_score}`}>
-                         <span className={`sentiment-indicator ${article.sentiment_score > 0.1 ? 'pos' : article.sentiment_score < -0.1 ? 'neg' : 'neu'}`}>
-                           {article.sentiment_score > 0.1 ? 'Positiv' : article.sentiment_score < -0.1 ? 'Negativ' : 'Neutral'}
-                         </span>
-                    </div>
-                </div>
-
-                <h2 className="card-title">
-                    <a href={article.url} target="_blank" rel="noopener noreferrer">
-                    {article.title}
-                    </a>
-                </h2>
-
+                {/* IMAGE - Klik åbner stadig modal for at læse */}
                 <div 
-                    className="card-summary"
-                    dangerouslySetInnerHTML={{ __html: article.summary_html }}
-                />
-
-                <div className="tags-container">
-                    {(article.tags || []).slice(0, 3).map((tag, i) => (
-                    <span key={i} className="tag">{tag}</span>
-                    ))}
+                    className="card-image-wrapper" 
+                    onClick={() => setSelectedArticle(article)} 
+                    style={{cursor: 'pointer'}} // <--- NYT
+                >
+                    <img 
+                        src={article.image || "https://placehold.co/600x400?text=No+Image"} 
+                        alt="News" 
+                        className="card-image"
+                    />
+                    <div className="card-source-badge">{article.source}</div>
                 </div>
 
-                <div className="card-footer">
-                    <button onClick={() => setSelectedArticle(article)} className="btn-read-more">
-                    Læs hele artiklen
-                    </button>
-                </div>
+                <div className="card-body">
+                    <div className="meta-row">
+                        {/* <--- ÆNDRET: Bruger publicationdate */}
+                        <span className="date">{formatDate(article.date)}</span>
+                        <div className="sentiment-wrapper" title={`Sentiment: ${article.sentiment_score}`}>
+                            <span className={`sentiment-indicator ${article.sentiment_score > 0.1 ? 'pos' : article.sentiment_score < -0.1 ? 'neg' : 'neu'}`}>
+                            {article.sentiment_score > 0.1 ? 'Positiv' : article.sentiment_score < -0.1 ? 'Negativ' : 'Neutral'}
+                            </span>
+                        </div>
+                    </div>
+
+                    <h2 className="card-title">
+                        {/* <--- NYT: Klikbar titel */}
+                        <span onClick={() => setSelectedArticle(article)} style={{cursor: 'pointer'}}>
+                        {article.title}
+                        </span>
+                    </h2>
+
+                    <div 
+                        className="card-summary"
+                        dangerouslySetInnerHTML={{ __html: article.summary_html }}
+                    />
+
+                    {/* <--- NYT: Workflow sektionen er flyttet ind i kortet */}
+                    <div className="workflow-area">
+                        <label className="input-label">Kategori ID'er:</label>
+                        <input 
+                            type="text" 
+                            className="category-input"
+                            placeholder="Fx 21, 55"
+                            // Binder til værdien i vores state-objekt for dette ID
+                            value={categoryInputs[article.id] || ""}
+                            onChange={(e) => handleInputChange(article.id, e.target.value)}
+                        />
+                        
+                        <div className="button-row">
+                            <button 
+                                onClick={() => handleDelete(article)} 
+                                className="btn-icon delete"
+                                title="Slet permanent"
+                            >
+                                🗑
+                            </button>
+
+                            <button 
+                                onClick={() => handleResolve(article)} 
+                                className="btn-action resolve"
+                                // Deaktiver hvis input er tomt
+                                disabled={!(categoryInputs[article.id] || "").trim()}
+                                title="Send til backlog"
+                            >
+                                ✓ Send til Backlog
+                            </button>
+                        </div>
+                    </div>
+                    {/* --- SLUT PÅ NYT OMRÅDE --- */}
 
                 </div>
             </article>
@@ -209,13 +232,14 @@ export default function NewsPage() {
         </div>
       </div>
 
-      {/* MODAL */}
+      {/* MODAL (Kun til læsning nu) */}
       {selectedArticle && (
         <div className="modal-overlay" onClick={() => setSelectedArticle(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-meta">
                 <span className="modal-source">{selectedArticle.source}</span>
+                {/* <--- ÆNDRET: Bruger publicationdate */}
                 <span className="modal-date">{formatDate(selectedArticle.date)}</span>
               </div>
               <button className="btn-close" onClick={() => setSelectedArticle(null)}>Luk</button>
@@ -224,89 +248,16 @@ export default function NewsPage() {
             <div className="modal-scroll-area">
               <h2 className="modal-title">{selectedArticle.title}</h2>
               <a href={selectedArticle.url} target="_blank" className="original-link">Gå til original kilde →</a>
-              
               <div className="article-prose" dangerouslySetInnerHTML={{ __html: selectedArticle.full_content_html }} />
               
-              {/* --- 3. MANGLENDE INPUT FELT: Her skriver brugeren kategorierne --- */}
-              <div style={{marginTop: 30, backgroundColor: '#F3F4F6', padding: 20, borderRadius: 8}}>
-                  <label style={{display: 'block', marginBottom: 8, fontWeight: 600, fontSize: '0.9rem'}}>
-                      Kategori ID'er (obligatorisk til mail):
-                  </label>
-                  <input 
-                    type="text" 
-                    placeholder="F.eks. 21, 34, 55"
-                    value={categoryInput}
-                    onChange={(e) => setCategoryInput(e.target.value)}
-                    style={{
-                        width: '100%',
-                        padding: '12px',
-                        borderRadius: '6px',
-                        border: '1px solid #D1D5DB',
-                        fontSize: '1rem',
-                        boxSizing: 'border-box'
-                    }}
-                  />
-                  <p style={{fontSize: '0.8rem', color: '#6B7280', marginTop: 5}}>
-                      Dette vil blive indsat i emnefeltet på mailen til backloggen.
-                  </p>
-              </div>
-
-              {/* ACTION AREA */}
-              <div className="modal-actions" style={{
-                  marginTop: 20, 
-                  borderTop: '1px solid #eee', 
-                  paddingTop: 20, 
-                  display: 'flex', 
-                  justifyContent: 'flex-end',
-                  gap: '12px' 
-              }}>
-                 
-                 <button 
-                    onClick={() => handleDelete(selectedArticle)}
-                    style={{
-                        backgroundColor: '#FFF', 
-                        color: '#EF4444', 
-                        border: '1px solid #EF4444',
-                        padding: '12px 24px',
-                        borderRadius: '8px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer',
-                        fontSize: '0.9rem',
-                        transition: '0.2s'
-                    }}
-                    onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#FEF2F2')}
-                    onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#FFF')}
-                 >
-                    🗑 Slet (Irrelevant)
-                 </button>
-
-                 <button 
-                    onClick={() => handleResolve(selectedArticle)}
-                    // Deaktiver knap hvis input er tomt
-                    disabled={!categoryInput.trim()} 
-                    style={{
-                        backgroundColor: categoryInput.trim() ? '#10B981' : '#9CA3AF', 
-                        color: 'white',
-                        border: 'none',
-                        padding: '12px 24px',
-                        borderRadius: '8px',
-                        fontWeight: 'bold',
-                        cursor: categoryInput.trim() ? 'pointer' : 'not-allowed',
-                        fontSize: '0.9rem'
-                    }}
-                 >
-                    ✓ Marker som behandlet
-                 </button>
-              </div>
-
+              {/* <--- ÆNDRET: Input felter og knapper er FJERNET herfra */}
             </div>
           </div>
         </div>
       )}
-       
-      {/* Existing Styles */}
+      
       <style jsx global>{`
-        /* ... Keep your existing styles ... */
+        /* ... Dine eksisterende styles ... */
         :root { --brand-navy: #1B264F; --brand-red: #C01B2E; --bg-page: #F8F9FA; --bg-card: #FFFFFF; --text-main: #111827; --text-muted: #6B7280; --border-light: #E5E7EB; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-page); color: var(--text-main); }
         mark { background-color: #FEF2F2; color: #991B1B; padding: 0 2px; border-radius: 2px; font-weight: 500; }
@@ -335,14 +286,75 @@ export default function NewsPage() {
         .sentiment-indicator.neg::before { background: #EF4444; }
         .sentiment-indicator.neu::before { background: #9CA3AF; }
         .card-title { font-size: 1.25rem; font-weight: 700; line-height: 1.3; margin: 0 0 12px 0; color: var(--text-main); }
-        .card-title a { text-decoration: none; color: inherit; transition: color 0.2s; }
-        .card-title a:hover { color: var(--brand-red); }
         .card-summary { font-size: 0.95rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 20px; flex-grow: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        .tags-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 24px; }
-        .tag { background: #F3F4F6; color: #4B5563; font-size: 0.7rem; font-weight: 600; padding: 4px 10px; border-radius: 99px; border: 1px solid #E5E7EB; }
-        .card-footer { margin-top: auto; }
-        .btn-read-more { background: var(--brand-red); border: none; color: white; padding: 10px 20px; border-radius: 50px; font-weight: 600; font-size: 0.9rem; cursor: pointer; width: 100%; transition: background 0.2s; box-shadow: 0 4px 6px -1px rgba(192, 27, 46, 0.2); }
-        .btn-read-more:hover { background: #a11626; }
+        
+        /* <--- NYT: CSS til Workflow området */
+        .workflow-area {
+            background-color: #F9FAFB;
+            border-top: 1px solid #E5E7EB;
+            margin: auto -24px -24px -24px;
+            padding: 20px;
+        }
+
+        .input-label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+
+        .category-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #D1D5DB;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-icon.delete {
+            background: #FEF2F2;
+            color: #EF4444;
+            border: 1px solid #FCA5A5;
+            border-radius: 6px;
+            width: 42px;
+            height: 42px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        .btn-icon.delete:hover { background: #FEE2E2; }
+
+        .btn-action.resolve {
+            background: #10B981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 0 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            flex-grow: 1;
+            transition: opacity 0.2s;
+        }
+        .btn-action.resolve:disabled {
+            background: #D1D5DB;
+            cursor: not-allowed;
+        }
+        .btn-action.resolve:hover:not(:disabled) {
+            background: #059669;
+        }
+        /* <--- SLUT PÅ NYT CSS */
+
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(27, 38, 79, 0.6); backdrop-filter: blur(4px); z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 20px; animation: fadeIn 0.2s ease-out; }
         .modal-content { background: white; width: 100%; max-width: 750px; max-height: 85vh; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; overflow: hidden; animation: slideUp 0.3s ease-out; }
         .modal-header { padding: 20px 30px; border-bottom: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; background: #FAFAFA; }
