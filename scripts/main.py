@@ -6,6 +6,7 @@ import re
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
+import hashlib
 
 
 
@@ -57,7 +58,7 @@ DIFFBOT_QUERY = """
 type:Article language:en  or(   title:"Antimicrobial resistance",    tags.label:"Antimicrobial resistance",    title:"Antibiotic resistance",    title:"Superbugs",    text:"Antimicrobial stewardship",    text:"Antibiotic resistance",    text:"Antimicrobial resistance",    text:"multidrug-resistant",    text:"Phage therapy" )  not(title:or("market research", "market size", "sensor", "magnetic", "forecast", "shares"))  not(site:or("surahquran.com", "angi.com", "NewStraitsTimes")) not(pageUrl:"www.nst.com.my")  sortBy:date"""
 
 AMR_KEYWORDS = [
-    "antimicrobial resistance", "antibiotic resistance", "amr", "superbugs", 
+    "antimicrobial resistance", "antibiotic resistance", "amr", "superbugs", "Superbugs", "Phage therapy", "multidrug-resistant", 
     "drug-resistant", "mrsa", "bacteria", "pathogens", "infection",
     "antibiotikaresistens", "multiresistent", "superbakterier"
 ]
@@ -103,11 +104,22 @@ def send_to_firestore(collection_name: str, data: dict):
         The ID of the newly created document, or None if an error occurred.
     """
     try:
-        doc_ref = db.collection(collection_name).add(data)
-        print(f"📝 Successfully added document with ID: {doc_ref[1].id} to collection '{collection_name}'")
-        return doc_ref[1].id
+        url = data.get('url')
+        if url:
+            # unique id for url = hashing
+            doc_id = hashlib.md5(url.encode('utf-8')).hexdigest()
+
+            # vi bruger .set() med dette id i stedet for .add() for at undgå dubletter
+            db.collection(collection_name).document(doc_id).set(data)
+            print(f"📝 Successfully set document with ID: {doc_id} in collection '{collection_name}'")
+            return doc_id
+        else:
+            # Fallback hvis ingen URL findes (burde sjældent ske)
+            doc_ref = db.collection(collection_name).add(data)
+            print(f"📝 Tilføjet (uden URL-ID): {doc_ref[1].id}")
+            return doc_ref[1].id
     except Exception as e:
-        print(f"❌ Error adding document to Firestore: {e}")
+        print(f"❌ Fejl ved skrivning til Firestore: {e}")
         return None
 
 def run_scraper():
@@ -118,7 +130,7 @@ def run_scraper():
     parameters = {
         "token" : DIFFBOT_API_TOKEN,
         "query" : DIFFBOT_QUERY,
-        "size" : 10, # Sat op til 25 igen
+        "size" : 20, # Sat op til 25 igen
         "json" : True
     }
     
@@ -170,7 +182,7 @@ def run_scraper():
         clean_obj = {
             "title": article.get('title', 'Uden titel'),
             "url": article.get('resolvedPageUrl') or article.get('pageUrl'),
-            "date": article.get('date', {}).get('str', 'Ukendt dato'),
+            "date": pub_date,
             "source": article.get('siteName', 'Ukendt kilde'),
             "image": article.get('image', None),
             

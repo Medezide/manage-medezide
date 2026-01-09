@@ -198,7 +198,7 @@ export default function NewsPage() {
                         <input 
                             type="text" 
                             className="category-input"
-                            placeholder="Fx 21, 55"
+                            placeholder="Fx 01 & 21 & 55 ..."
                             // Binder til værdien i vores state-objekt for dette ID
                             value={categoryInputs[article.id] || ""}
                             onChange={(e) => handleInputChange(article.id, e.target.value)}
