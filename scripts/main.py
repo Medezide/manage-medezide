@@ -130,7 +130,7 @@ def run_scraper():
     parameters = {
         "token" : DIFFBOT_API_TOKEN,
         "query" : DIFFBOT_QUERY,
-        "size" : 20, # Sat op til 25 igen
+        "size" : 50, # Sat op til 25 igen
         "json" : True
     }
     
