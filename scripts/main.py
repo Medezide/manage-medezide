@@ -1,5 +1,4 @@
 import requests
-import json
 import os
 from dotenv import load_dotenv
 import re
@@ -8,26 +7,13 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 import hashlib
 
-
-
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
-
-
-
-
-
 # 1. SETUP STIER (PATHS)
 # Vi finder roden af projektet ved at gå én gang op fra 'scripts' mappen
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, 'data') # Her skal JSON-filen lande
 ENV_PATH = os.path.join(BASE_DIR, '.env') # <-- NYT: Stien til din .env fil
 
 
 SERVICE_ACCOUNT_KEY_PATH = os.path.join(BASE_DIR, 'serviceAccountKey.json')
-
-# Sørg for at data-mappen findes
-os.makedirs(DATA_DIR, exist_ok=True)
 
 # 2. LOAD .ENV FRA DEN SPECIFIKKE STI
 load_dotenv(ENV_PATH) # <-- NYT: Vi loader fra den specifikke sti
@@ -147,7 +133,6 @@ def run_scraper():
     raw_list = data.get('data', [])
     print(f"📥 Fandt {len(raw_list)} artikler. Behandler nu...")
 
-    clean_articles = []
     firestore_collection_name = 'news-unresolved'
 
     # 2. Behandl data og tilføj highlights
@@ -194,19 +179,10 @@ def run_scraper():
             "tags": [t.get('label') for t in article.get('tags', []) if 'label' in t],
             "sentiment_score": article.get('sentiment', 0)
         }
-        clean_articles.append(clean_obj)
 
         # NEW: Send the clean_obj to Firestore
         send_to_firestore(firestore_collection_name, clean_obj)
 
-
-    # 3. Gem til Next.js data mappen
-    output_file = os.path.join(DATA_DIR, 'amr_news.json')
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(clean_articles, f, indent=4, ensure_ascii=False)
-
-    print(f"✅ Succes! Data gemt i: {output_file}")
 
 if __name__ == '__main__':
     run_scraper()
