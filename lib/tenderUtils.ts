@@ -52,7 +52,7 @@ export const COUNTRY_MAPPING: Record<string, string> = {
     "GRC": "Greece", "LUX": "Luxembourg", "NOR": "Norway",
     "DNK": "Denmark", "DEU": "Germany", "FRA": "France",
     "SWE": "Sweden", "ITA": "Italy", "UK": "United Kingdom",
-    "EST": "Estonia", "LVA": "Latvia", "LTU": "Lithuania", "POL": "Poland"
+    "EST": "Estonia", "LVA": "Latvia", "LTU": "Lithuania", "POL": "Poland", "CHE": "Switzerland"
 };
 
 function getSafeValue(obj: any, path: string[]): any {

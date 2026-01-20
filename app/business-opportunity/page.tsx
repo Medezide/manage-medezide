@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, writeBatch, deleteDoc, doc } from 'firebase/firestore';
-import { fetchAndSaveTenders } from '@/app/tender-actions';
+import { fetchAndSaveTenders, translateText } from '@/app/tender-actions';
 
 // --- DATA TYPES ---
 interface Tender {
@@ -21,6 +21,7 @@ interface Tender {
   CPV_Description: string;
   MatchedTrigger?: string;
   assigned_categories?: string;
+  translated_description?: string; // <--- New field for cached translation
 }
 
 export default function BusinessOpportunityPage() {
@@ -38,6 +39,21 @@ export default function BusinessOpportunityPage() {
     daysBack: 3,
     limit: 10
   });
+
+  // --- TRANSLATION STATE ---
+  const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  // Helper: Open modal and check for existing translation
+  const openModal = (tender: Tender) => {
+      // If the tender already has a saved translation, show it immediately
+      if (tender.translated_description) {
+          setTranslatedDesc(tender.translated_description);
+      } else {
+          setTranslatedDesc(null);
+      }
+      setSelectedTender(tender);
+  };
 
   // --- 1. LOAD FROM FIREBASE ---
   const fetchDbTenders = async () => {
@@ -174,7 +190,6 @@ export default function BusinessOpportunityPage() {
                         </span>
                     </div>
 
-                    {/* NEW: External Link Button */}
                     <a 
                         href={tender.ExternalURI} 
                         target="_blank" 
@@ -187,24 +202,20 @@ export default function BusinessOpportunityPage() {
 
                 {/* MIDDLE: MAIN CONTENT */}
                 <div className="item-main">
-                    {/* Tags Row */}
-                    <div className="tags-row">
-                        <span className='item-desc'>Monitored CPV:</span>
-                        {tender.MatchedTrigger && (
-                            <span className="tag-found-via">
-                                🔍 {tender.MatchedTrigger}
-                            </span>
-                        )}
-                        <span className='item-desc'>Actual CPV:</span>
-                        <span className="tag-cpv" title={tender.CPV_Description}>
-                           🏷️ {tender.CPV_Description}
-                        </span>
-                    </div>
-
-                    <h2 className="item-title" onClick={() => setSelectedTender(tender)}>
+                    <h2 className="item-title" onClick={() => openModal(tender)}>
                         {tender.Title}
                     </h2>
-                    
+                    {/* CPV Row */}
+                    <div className="tags-row">
+                        {tender.MatchedTrigger && (
+                            <span className="tag-found-via">
+                                🔍 Monitored CPV: {tender.MatchedTrigger}
+                            </span>
+                        )}
+                        <span className="tag-cpv" title={tender.CPV_Description}>
+                           🏷️ CPV: {tender.CPV_Description}
+                        </span>
+                    </div>
                     <div className="buyer-row">
                         <span className="buyer-name">🏢 {tender.BuyerName}</span>
                         <span className="country-tag">
@@ -214,7 +225,7 @@ export default function BusinessOpportunityPage() {
 
                     <p className="item-desc">
                         {tender.Description?.substring(0, 180)}...
-                        <span className="read-more" onClick={() => setSelectedTender(tender)}>Læs mere</span>
+                        <span className="read-more" onClick={() => openModal(tender)}>Læs mere</span>
                     </p>
                 </div>
 
@@ -250,7 +261,7 @@ export default function BusinessOpportunityPage() {
         </div>
       </div>
 
-      {/* --- MODALS --- */}
+      {/* --- SEARCH MODAL --- */}
       {showFetchModal && (
         <div className="modal-overlay" onClick={() => !isFetchingAPI && setShowFetchModal(false)}>
             <div className="modal-content" style={{maxWidth: '500px', overflow: 'visible'}} onClick={e => e.stopPropagation()}>
@@ -261,7 +272,7 @@ export default function BusinessOpportunityPage() {
                 <div className="p-6">
                     <div className="mb-4">
                         <label className="block text-sm font-bold text-gray-700 mb-2">Søgeord</label>
-                        <input type="text" className="w-full p-2 border rounded" placeholder="Medical..." 
+                        <input type="text" className="w-full p-2 border rounded" placeholder="Antimicrobial..." 
                             value={searchConfig.query} onChange={(e) => setSearchConfig({...searchConfig, query: e.target.value})} />
                     </div>
                     <div className="grid grid-cols-2 gap-4 mb-6">
@@ -286,6 +297,7 @@ export default function BusinessOpportunityPage() {
         </div>
       )}
 
+      {/* --- DETAIL MODAL WITH TRANSLATION --- */}
       {selectedTender && (
         <div className="modal-overlay" onClick={() => setSelectedTender(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -296,20 +308,81 @@ export default function BusinessOpportunityPage() {
               </div>
               <button className="btn-close" onClick={() => setSelectedTender(null)}>Luk</button>
             </div>
+            
             <div className="modal-scroll-area">
-              <h2 className="modal-title">{selectedTender.Title}</h2>
-              {/* Also kept link here just in case */}
+              
+              <div className="flex justify-between items-start gap-4 mb-4">
+                  <h2 className="modal-title flex-1">{selectedTender.Title}</h2>
+                  
+                  {/* TRANSLATE BUTTON */}
+                  <button 
+                    onClick={async () => {
+                        // Logic: Toggle off if currently showing translation
+                        if (translatedDesc) {
+                            setTranslatedDesc(null);
+                        } else {
+                            // If we already have a saved translation in the object, use it directly (no API call)
+                            if (selectedTender.translated_description) {
+                                setTranslatedDesc(selectedTender.translated_description);
+                            } else {
+                                // Fetch translation from Server Action
+                                setIsTranslating(true);
+                                const res = await translateText(selectedTender.Description, selectedTender.NoticeID);
+                                setIsTranslating(false);
+                                
+                                if (res.success && res.text) {
+                                    setTranslatedDesc(res.text);
+                                    
+                                    // Update local state so we don't need to refresh to see it cached
+                                    setTenders(prev => prev.map(t => 
+                                        t.NoticeID === selectedTender.NoticeID 
+                                        ? { ...t, translated_description: res.text } 
+                                        : t
+                                    ));
+                                    
+                                    // Update current selected tender object
+                                    setSelectedTender(prev => prev ? ({ ...prev, translated_description: res.text }) : null);
+
+                                } else {
+                                    alert("Oversættelse fejlede: " + res.text);
+                                }
+                            }
+                        }
+                    }}
+                    className={`
+                        px-4 py-2 rounded font-bold text-sm transition-colors flex items-center gap-2
+                        ${translatedDesc ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
+                    `}
+                  >
+                    {isTranslating ? (
+                        <span>Oversætter... ⏳</span>
+                    ) : translatedDesc ? (
+                        <><span>↺ Vis Original</span></>
+                    ) : (
+                        <><span>A→Z</span> <span>Oversæt til Engelsk</span></>
+                    )}
+                  </button>
+              </div>
+
               <a href={selectedTender.ExternalURI} target="_blank" className="original-link">Åbn på TED Portal →</a>
+              
               <div className="article-prose">
-                  <p className="text-gray-700 whitespace-pre-wrap">{selectedTender.Description}</p>
+                  {translatedDesc ? (
+                      <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 animate-in fade-in">
+                          <p className="text-xs font-bold text-blue-500 uppercase mb-2">Oversat fra originalt sprog</p>
+                          <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{translatedDesc}</p>
+                      </div>
+                  ) : (
+                      <p className="text-gray-700 whitespace-pre-wrap">{selectedTender.Description}</p>
+                  )}
               </div>
             </div>
           </div>
         </div>
       )}
-
       <style jsx global>{`
         :root { --brand-navy: #1B264F; --brand-red: #C01B2E; --bg-page: #F3F4F6; --text-main: #111827; --text-muted: #6B7280; }
+        button { cursor: pointer; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-page); color: var(--text-main); }
         .page-wrapper { min-height: 100vh; display: flex; flex-direction: column; }
         
@@ -384,7 +457,7 @@ export default function BusinessOpportunityPage() {
             flex-direction: column; 
             gap: 8px;
         }
-        .tags-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+        .tags-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; align-items: center; }
         .tag-found-via { background: #E0F2FE; color: #075985; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
         .tag-cpv { background: #F3F4F6; color: #374151; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; border: 1px solid #E5E7EB; }
         
@@ -418,6 +491,7 @@ export default function BusinessOpportunityPage() {
         .btn-approve:disabled { background: #D1D5DB; cursor: not-allowed; }
 
         /* MODAL */
+        .modal-meta { display: flex; flex-direction: row; gap: 25px; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
         .modal-content { background: white; width: 90%; max-width: 800px; max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
         .modal-header { padding: 20px; border-bottom: 1px solid #E5E7EB; display: flex; justify-content: space-between; }

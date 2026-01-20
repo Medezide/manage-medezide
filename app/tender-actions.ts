@@ -10,6 +10,68 @@ interface SearchConfig {
   limit?: number;
 }
 
+// --- UPDATED TRANSLATION ACTION ---
+export async function translateText(text: string, noticeId: string) {
+    // 1. Check for API Key
+    const apiKey = process.env.DEEPL_API_KEY;
+    if (!apiKey) {
+        return { success: false, text: "Error: No Translation API Key configured." };
+    }
+
+    try {
+        const docRef = adminDb.collection("tender-unresolved").doc(noticeId);
+
+        // 2. CHECK DATABASE FIRST (Cache Hit)
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            const data = docSnap.data();
+            if (data?.translated_description) {
+                console.log(`✅ Translation found in DB for ${noticeId}`);
+                return { success: true, text: data.translated_description };
+            }
+        }
+
+        // 3. IF NOT FOUND, CALL DEEPL (Cache Miss)
+        console.log(`🌍 Translating ${noticeId} via DeepL...`);
+        const response = await fetch('https://api-free.deepl.com/v2/translate', {
+            method: 'POST',
+            headers: {
+                'Authorization': `DeepL-Auth-Key ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text: [text],
+                target_lang: 'EN'
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`DeepL Error: ${response.status} - ${err}`);
+        }
+
+        const resData = await response.json();
+        
+        if (resData.translations && resData.translations.length > 0) {
+            const translatedText = resData.translations[0].text;
+
+            // 4. SAVE TO DATABASE (Write to Cache)
+            await docRef.update({
+                translated_description: translatedText
+            });
+            console.log(`💾 Saved translation for ${noticeId}`);
+
+            return { success: true, text: translatedText };
+        } else {
+            return { success: false, text: "Could not translate text." };
+        }
+
+    } catch (error) {
+        console.error("Translation Failed:", error);
+        return { success: false, text: "Translation failed. Check server logs." };
+    }
+}
+
 function generateDateFilter(days: number): string {
     const dates: string[] = [];
     const today = new Date();
