@@ -1,7 +1,7 @@
 'use server';
 
 import { adminDb } from '@/lib/firebaseAdmin';
-import { parseTedXml } from '@/lib/tenderUtils';
+import { parseTedXml, MONITORED_CPV_CODES } from '@/lib/tenderUtils';
 
 interface SearchConfig {
   query?: string;
@@ -26,16 +26,18 @@ export async function fetchAndSaveTenders(config: SearchConfig) {
   const tendersRef = adminDb.collection("tender-unresolved");
   const API_URL = "https://api.ted.europa.eu/v3/notices/search";
   
-  // 1. Build Query
   let queryParts = [];
   const daysToFetch = config.daysBack > 0 ? config.daysBack : 3;
   const dateQuery = generateDateFilter(daysToFetch);
   
   // CPV Filter
-  if (config.cpvCode) queryParts.push(`pc=${config.cpvCode}`);
-  else queryParts.push(`(pc=33651100 OR pc=33651200 OR pc=33651300 OR pc=33651500 OR pc=33651600 OR pc=33651620 OR pc=33651600 OR pc=33651660 OR pc=33698100 OR pc=38970000 OR pc=38433000 OR pc=38437000 OR pc=38910000 OR pc=51400000 OR pc=72000000 OR pc=73000000 OR pc=80320000 OR pc=80420000 OR pc=80430000 OR pc=85100000 OR pc=85200000 OR pc=90720000)`);
+  if (config.cpvCode) {
+    queryParts.push(`pc=${config.cpvCode}`);
+  } else {
+    const cpvOrString = MONITORED_CPV_CODES.map(c => `pc=${c}`).join(' OR ');
+    queryParts.push(`(${cpvOrString})`);
+  }
 
-  // Text Filter
   if (config.query) queryParts.push(`ft="${config.query}"`);
 
   const mainCriteria = queryParts.join(" AND ");
@@ -44,7 +46,6 @@ export async function fetchAndSaveTenders(config: SearchConfig) {
 
   const payload = {
     "query": qString,
-    // CRITICAL: We request "deadline-receipt-request" to fix the date issue
     "fields": ["links", "deadline-receipt-request", "classification-cpv"], 
     "page": 1,
     "limit": config.limit || 5,
@@ -78,12 +79,12 @@ export async function fetchAndSaveTenders(config: SearchConfig) {
         const xmlLinks = notice.links.xml;
         const xmlUrl = xmlLinks.MUL || Object.values(xmlLinks)[0];
 
-        // --- DATE EXTRACTION ---
-        // We get the date array from the API response
+        // EXTRACT API DATA
         const apiDateArray = notice['deadline-receipt-request'];
-        // Use the first date if it exists
         const apiDate = (apiDateArray && apiDateArray.length > 0) ? apiDateArray[0] : undefined;
-        // -----------------------
+        
+        // NEW: Extract Full CPV List
+        const apiCpvs = notice['classification-cpv'] || [];
 
         if (!xmlUrl) continue;
 
@@ -91,12 +92,12 @@ export async function fetchAndSaveTenders(config: SearchConfig) {
             const xmlRes = await fetch(xmlUrl as string);
             const xmlText = await xmlRes.text();
             
-            // We pass the extracted API date into our parser
-            const tenderData = parseTedXml(xmlText, apiDate);
+            // Pass BOTH apiDate AND apiCpvs to the parser
+            const tenderData = parseTedXml(xmlText, apiDate, apiCpvs);
 
             if (tenderData.NoticeID && tenderData.NoticeID !== "N/A") {
                 await tendersRef.doc(tenderData.NoticeID).set(tenderData);
-                console.log(`✅ Saved: ${tenderData.NoticeID} | Date: ${tenderData.TenderApplicationDate}`);
+                console.log(`✅ Saved: ${tenderData.NoticeID}`);
                 count++;
             } else {
                 console.log(`⚠️ Skipped (No ID found in XML)`);

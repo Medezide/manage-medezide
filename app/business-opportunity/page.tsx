@@ -1,16 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebase";
-import {
-  collection,
-  getDocs,
-  writeBatch,
-  deleteDoc,
-  doc,
-} from "firebase/firestore";
-// We import the server action from the new isolated file
-import { fetchAndSaveTenders } from "@/app/tender-actions";
+import { useState, useEffect } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, writeBatch, deleteDoc, doc } from 'firebase/firestore';
+import { fetchAndSaveTenders } from '@/app/tender-actions';
 
 // --- DATA TYPES ---
 interface Tender {
@@ -26,38 +19,34 @@ interface Tender {
   ExternalURI: string;
   CPV: string;
   CPV_Description: string;
+  MatchedTrigger?: string;
   assigned_categories?: string;
 }
 
 export default function BusinessOpportunityPage() {
-  // --- STATE ---
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Selection & Inputs
+  
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
-  const [categoryInputs, setCategoryInputs] = useState<{
-    [key: string]: string;
-  }>({});
+  const [categoryInputs, setCategoryInputs] = useState<{[key: string]: string}>({}); 
 
-  // Modal & API State
   const [showFetchModal, setShowFetchModal] = useState(false);
   const [isFetchingAPI, setIsFetchingAPI] = useState(false);
-  const [searchConfig, setSearchConfig] = useState({
-    query: "", // Removed default text to allow broad search
+  const [searchConfig, setSearchConfig] = useState({ 
+    query: '', 
+    cpvCode: '', 
     daysBack: 3,
-    limit: 5,
+    limit: 10
   });
 
   // --- 1. LOAD FROM FIREBASE ---
   const fetchDbTenders = async () => {
     setLoading(true);
     try {
-      // Fetch from the new collection "tender-unresolved"
       const querySnapshot = await getDocs(collection(db, "tender-unresolved"));
-      const items = querySnapshot.docs.map((doc) => ({
+      const items = querySnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data(),
+        ...doc.data()
       })) as Tender[];
       setTenders(items);
     } catch (error) {
@@ -71,17 +60,15 @@ export default function BusinessOpportunityPage() {
     fetchDbTenders();
   }, []);
 
-  // --- 2. HANDLE API ACTION ---
+  // --- 2. API ACTION ---
   const handleApiFetch = async () => {
     setIsFetchingAPI(true);
     try {
-      // Call the Server Action
       const result = await fetchAndSaveTenders(searchConfig);
-
-      if (result.success) {
+      if(result.success) {
         alert(result.message);
         setShowFetchModal(false);
-        fetchDbTenders(); // Refresh list to show new items
+        fetchDbTenders(); 
       } else {
         alert("Fejl: " + result.message);
       }
@@ -95,654 +82,348 @@ export default function BusinessOpportunityPage() {
 
   // --- 3. WORKFLOW ACTIONS ---
   const handleInputChange = (id: string, value: string) => {
-    setCategoryInputs((prev) => ({ ...prev, [id]: value }));
+    setCategoryInputs(prev => ({ ...prev, [id]: value }));
   };
 
   const handleDelete = async (item: Tender) => {
     if (!confirm(`Slet tender ${item.NoticeID} permanent?`)) return;
     try {
-      await deleteDoc(doc(db, "tender-unresolved", item.id!));
-      setTenders((prev) => prev.filter((t) => t.id !== item.id));
-    } catch (e) {
-      alert("Kunne ikke slette.");
-    }
+        await deleteDoc(doc(db, "tender-unresolved", item.id!));
+        setTenders(prev => prev.filter(t => t.id !== item.id));
+    } catch (e) { alert("Kunne ikke slette."); }
   };
 
   const handleResolve = async (item: Tender) => {
     const input = categoryInputs[item.id!] || "";
-    if (!input.trim()) {
-      alert("Indtast venligst en kategori eller note før godkendelse.");
-      return;
-    }
-
+    if (!input.trim()) { alert("Indtast kategori først."); return; }
+    
     try {
-      const batch = writeBatch(db);
-      const newRef = doc(db, "tender-resolved", item.id!);
-      const originalRef = doc(db, "tender-unresolved", item.id!);
+        const batch = writeBatch(db);
+        const newRef = doc(db, "tender-resolved", item.id!);
+        const originalRef = doc(db, "tender-unresolved", item.id!);
 
-      batch.set(newRef, {
-        ...item,
-        assigned_categories: input,
-        resolved_at: new Date().toISOString(),
-      });
-      batch.delete(originalRef);
+        batch.set(newRef, { 
+            ...item, 
+            assigned_categories: input, 
+            resolved_at: new Date().toISOString() 
+        });
+        batch.delete(originalRef);
+        
+        await batch.commit();
+        setTenders(prev => prev.filter(t => t.id !== item.id));
+        
+        const newInputs = {...categoryInputs};
+        delete newInputs[item.id!];
+        setCategoryInputs(newInputs);
 
-      await batch.commit();
-      setTenders((prev) => prev.filter((t) => t.id !== item.id));
-
-      // Clear input state
-      const newInputs = { ...categoryInputs };
-      delete newInputs[item.id!];
-      setCategoryInputs(newInputs);
     } catch (error) {
-      console.error("Fejl ved godkendelse:", error);
-      alert("Kunne ikke flytte tender.");
+        console.error("Fejl:", error);
+        alert("Kunne ikke flytte tender.");
     }
   };
 
-  if (loading)
-    return (
-      <div style={{ padding: 50, textAlign: "center" }}>
-        Indlæser Tenders...
-      </div>
-    );
+  const isDateCritical = (dateStr: string) => {
+      if(!dateStr || dateStr === 'N/A') return false;
+      const days = (new Date(dateStr).getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+      return days < 7 && days > 0;
+  };
+
+  if (loading) return <div style={{padding: 50, textAlign: 'center'}}>Indlæser Tenders...</div>;
 
   return (
     <main className="page-wrapper">
+      
       {/* --- HEADER --- */}
       <div className="header-bg">
-        <header className="header-content">
-          <div className="header-top">
-            <a href="/" className="back-link">
-              ← Tilbage
-            </a>
-            <span className="brand-tag">TENDER INTELLIGENCE</span>
-          </div>
-          <h1>Udbudsovervågning</h1>
-          <p>EU Funding & Tenders Pipeline</p>
-
-          <button
-            onClick={() => setShowFetchModal(true)}
-            className="mt-6 bg-white text-[#1B264F] px-6 py-3 rounded font-bold hover:bg-gray-100 transition-colors shadow-lg"
-          >
-            + Hent nye udbud
-          </button>
-        </header>
+          <header className="header-content">
+            <div className="header-top">
+                <a href="/" className="back-link">← Tilbage</a>
+                <span className="brand-tag">TENDER INTELLIGENCE</span>
+            </div>
+            <div className="flex justify-between items-end">
+                <div className="text-left">
+                    <h1>Udbudsovervågning</h1>
+                    <p>EU Funding & Tenders Pipeline</p>
+                </div>
+                <button 
+                    onClick={() => setShowFetchModal(true)}
+                    className="bg-white text-[#1B264F] px-6 py-3 rounded font-bold hover:bg-gray-100 transition-colors shadow-lg"
+                >
+                    + Hent nye udbud
+                </button>
+            </div>
+          </header>
       </div>
 
-      {/* --- MAIN CONTENT GRID --- */}
+      {/* --- MAIN LIST CONTAINER --- */}
       <div className="main-container">
-        <div className="grid">
-          {tenders.map((tender) => (
-            <article key={tender.id} className="card">
-              {/* Visual Header (Mocking an image with CPV data) */}
-              <div
-                className="card-image-wrapper flex flex-col items-center justify-center bg-gray-100 text-[#1B264F] relative"
-                onClick={() => setSelectedTender(tender)}
-                style={{ cursor: "pointer", height: "200px" }}
-              >
-                <div className="text-center p-4">
-                  <div className="text-4xl font-bold mb-2">
-                    {tender.BuyerCountry}
-                  </div>
-                  <div className="text-xs font-mono bg-white px-2 py-1 rounded inline-block shadow-sm">
-                    {tender.CPV}
-                  </div>
-                </div>
-                <div
-                  className="card-source-badge"
-                  style={{
-                    backgroundColor:
-                      tender.TenderStatus === "Open" ? "#10B981" : "#EF4444",
-                    color: "white",
-                  }}
-                >
-                  {tender.TenderStatus}
-                </div>
-              </div>
+        <div className="list-wrapper">
+            {tenders.map((tender) => (
+            <article key={tender.id} className="list-item">
+                
+                {/* LEFT: STATUS, DATE & TED LINK */}
+                <div className="item-left">
+                    <div className={`status-badge ${tender.TenderStatus === 'Open' ? 'open' : 'closed'}`}>
+                        {tender.TenderStatus}
+                    </div>
+                    
+                    <div className="date-block">
+                        <span className="label">Deadline</span>
+                        <span className={`date-val ${isDateCritical(tender.TenderApplicationDate) ? 'text-red-600 font-bold' : ''}`}>
+                            {tender.TenderApplicationDate}
+                        </span>
+                    </div>
 
-              <div className="card-body">
-                <div className="meta-row">
-                  <span className="date">
-                    Deadline: {tender.TenderApplicationDate}
-                  </span>
-                  <span className="font-bold text-[#C41D26]">
-                    {tender.EstimatedValue}
-                  </span>
-                </div>
-
-                <h2 className="card-title">
-                  <span
-                    onClick={() => setSelectedTender(tender)}
-                    style={{ cursor: "pointer" }}
-                  >
-                    {tender.Title}
-                  </span>
-                </h2>
-
-                <p className="text-xs font-bold text-gray-500 uppercase mb-2 tracking-wide">
-                  {tender.BuyerName}
-                </p>
-                <p className="card-summary">
-                  {tender.Description?.substring(0, 150)}...
-                </p>
-
-                {/* Workflow Area */}
-                <div className="workflow-area">
-                  <label className="input-label">Action Note:</label>
-                  <input
-                    type="text"
-                    className="category-input"
-                    placeholder="Internt notat / Kategori..."
-                    value={categoryInputs[tender.id!] || ""}
-                    onChange={(e) =>
-                      handleInputChange(tender.id!, e.target.value)
-                    }
-                  />
-                  <div className="button-row">
-                    <button
-                      onClick={() => handleDelete(tender)}
-                      className="btn-icon delete"
-                      title="Slet"
+                    {/* NEW: External Link Button */}
+                    <a 
+                        href={tender.ExternalURI} 
+                        target="_blank" 
+                        className="btn-ted-link"
+                        title="Åbn originalt udbud på TED"
                     >
-                      🗑
-                    </button>
-                    <button
-                      onClick={() => handleResolve(tender)}
-                      className="btn-action resolve"
-                      disabled={!(categoryInputs[tender.id!] || "").trim()}
-                    >
-                      ✓ Godkend
-                    </button>
-                  </div>
+                        TED ↗
+                    </a>
                 </div>
-              </div>
+
+                {/* MIDDLE: MAIN CONTENT */}
+                <div className="item-main">
+                    {/* Tags Row */}
+                    <div className="tags-row">
+                        <span className='item-desc'>Monitored CPV:</span>
+                        {tender.MatchedTrigger && (
+                            <span className="tag-found-via">
+                                🔍 {tender.MatchedTrigger}
+                            </span>
+                        )}
+                        <span className='item-desc'>Actual CPV:</span>
+                        <span className="tag-cpv" title={tender.CPV_Description}>
+                           🏷️ {tender.CPV_Description}
+                        </span>
+                    </div>
+
+                    <h2 className="item-title" onClick={() => setSelectedTender(tender)}>
+                        {tender.Title}
+                    </h2>
+                    
+                    <div className="buyer-row">
+                        <span className="buyer-name">🏢 {tender.BuyerName}</span>
+                        <span className="country-tag">
+                           🌍 {tender.BuyerCountry}
+                        </span>
+                    </div>
+
+                    <p className="item-desc">
+                        {tender.Description?.substring(0, 180)}...
+                        <span className="read-more" onClick={() => setSelectedTender(tender)}>Læs mere</span>
+                    </p>
+                </div>
+
+                {/* RIGHT: ACTION WORKFLOW */}
+                <div className="item-right">
+                    <div className="value-display">
+                        {tender.EstimatedValue !== 'N/A' && tender.EstimatedValue}
+                    </div>
+
+                    <div className="workflow-box">
+                        <input 
+                            type="text" 
+                            className="workflow-input"
+                            placeholder="Notat / Kategori..."
+                            value={categoryInputs[tender.id!] || ""}
+                            onChange={(e) => handleInputChange(tender.id!, e.target.value)}
+                        />
+                        <div className="workflow-buttons">
+                            <button onClick={() => handleDelete(tender)} className="btn-del" title="Slet">🗑</button>
+                            <button 
+                                onClick={() => handleResolve(tender)} 
+                                className="btn-approve"
+                                disabled={!(categoryInputs[tender.id!] || "").trim()}
+                            >
+                                ✓ Godkend
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
             </article>
-          ))}
+            ))}
         </div>
       </div>
 
-      {/* --- SEARCH CONFIG MODAL --- */}
+      {/* --- MODALS --- */}
       {showFetchModal && (
-        <div
-          className="modal-overlay"
-          onClick={() => !isFetchingAPI && setShowFetchModal(false)}
-        >
-          <div
-            className="modal-content"
-            style={{ maxWidth: "500px", overflow: "visible" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h3 className="text-xl font-bold text-[#1B264F]">
-                Konfigurer Udbudssøgning
-              </h3>
-              {!isFetchingAPI && (
-                <button
-                  className="btn-close"
-                  onClick={() => setShowFetchModal(false)}
-                >
-                  Luk
-                </button>
-              )}
+        <div className="modal-overlay" onClick={() => !isFetchingAPI && setShowFetchModal(false)}>
+            <div className="modal-content" style={{maxWidth: '500px', overflow: 'visible'}} onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h3 className="text-xl font-bold text-[#1B264F]">Konfigurer Søgning</h3>
+                    {!isFetchingAPI && <button className="btn-close" onClick={() => setShowFetchModal(false)}>Luk</button>}
+                </div>
+                <div className="p-6">
+                    <div className="mb-4">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">Søgeord</label>
+                        <input type="text" className="w-full p-2 border rounded" placeholder="Medical..." 
+                            value={searchConfig.query} onChange={(e) => setSearchConfig({...searchConfig, query: e.target.value})} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Periode</label>
+                            <select className="w-full p-2 border rounded bg-white" value={searchConfig.daysBack} onChange={(e) => setSearchConfig({...searchConfig, daysBack: parseInt(e.target.value)})}>
+                                <option value={1}>I dag</option>
+                                <option value={3}>3 dage</option>
+                                <option value={7}>1 uge</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Max Antal</label>
+                            <input type="number" className="w-full p-2 border rounded" value={searchConfig.limit} onChange={(e) => setSearchConfig({...searchConfig, limit: parseInt(e.target.value)})} />
+                        </div>
+                    </div>
+                    <button onClick={handleApiFetch} disabled={isFetchingAPI} className="w-full bg-[#1B264F] text-white py-3 rounded font-bold hover:bg-[#2a386f] disabled:bg-gray-400 flex justify-center items-center gap-2">
+                        {isFetchingAPI ? <span>Henter data... ⏳</span> : "Kør Søgning"}
+                    </button>
+                </div>
             </div>
-            <div className="p-6">
-
-              {/* Input: Fritekst */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Søgeord (Fritekst)
-                </label>
-                <input
-                  type="text"
-                  className="w-full p-2 border rounded"
-                  value={searchConfig.query}
-                  onChange={(e) =>
-                    setSearchConfig({ ...searchConfig, query: e.target.value })
-                  }
-                />
-              </div>
-
-              {/* Input: Range of days */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Hvor langt tilbage?
-                </label>
-                <select
-                  className="w-full p-2 border rounded bg-white"
-                  value={searchConfig.daysBack}
-                  onChange={(e) =>
-                    setSearchConfig({
-                      ...searchConfig,
-                      daysBack: parseInt(e.target.value),
-                    })
-                  }
-                >
-                  <option value={1}>I dag (1 dag)</option>
-                  <option value={3}>Sidste 3 dage</option>
-                  <option value={5}>Sidste 5 dage</option>
-                  <option value={7}>Sidste uge (7 dage)</option>
-                  <option value={14}>Sidste 2 uger</option>
-                </select>
-              </div>
-
-              {/* Input: Max Antal (Limit) */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Max Antal (Limit)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  className="w-full p-2 border rounded"
-                  value={searchConfig.limit}
-                  onChange={(e) =>
-                    setSearchConfig({
-                      ...searchConfig,
-                      limit: parseInt(e.target.value),
-                    })
-                  }
-                />
-              </div>
-
-              <button
-                onClick={handleApiFetch}
-                disabled={isFetchingAPI}
-                className="w-full bg-[#1B264F] text-white py-3 rounded font-bold hover:bg-[#2a386f] disabled:bg-gray-400 transition-colors flex justify-center items-center gap-2"
-              >
-                {isFetchingAPI ? (
-                  <>
-                    <span>Henter XML fra EU...</span>
-                    <span className="animate-spin">⏳</span>
-                  </>
-                ) : (
-                  "Kør Søgning"
-                )}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
-      {/* --- DETAIL MODAL --- */}
       {selectedTender && (
         <div className="modal-overlay" onClick={() => setSelectedTender(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-meta">
-                <span className="modal-source">
-                  NOTICE: {selectedTender.NoticeID}
-                </span>
-                <span className="modal-date">
-                  Deadline: {selectedTender.TenderApplicationDate}
-                </span>
+                <span className="modal-source">NOTICE: {selectedTender.NoticeID}</span>
+                <span className="modal-date">Deadline: {selectedTender.TenderApplicationDate}</span>
               </div>
-              <button
-                className="btn-close"
-                onClick={() => setSelectedTender(null)}
-              >
-                Luk
-              </button>
+              <button className="btn-close" onClick={() => setSelectedTender(null)}>Luk</button>
             </div>
             <div className="modal-scroll-area">
               <h2 className="modal-title">{selectedTender.Title}</h2>
-              <a
-                href={selectedTender.ExternalURI}
-                target="_blank"
-                className="original-link"
-              >
-                Åbn på TED Portal →
-              </a>
-
-              <div className="grid grid-cols-2 gap-4 mb-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
-                <div>
-                  <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">
-                    Køber
-                  </span>
-                  <span className="font-medium text-gray-900">
-                    {selectedTender.BuyerName}
-                  </span>
-                  <span className="block text-sm text-gray-500 mt-1">
-                    {selectedTender.BuyerCountry}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">
-                    Estimeret Værdi
-                  </span>
-                  <span className="font-bold text-[#C41D26] text-lg">
-                    {selectedTender.EstimatedValue}
-                  </span>
-                </div>
-                <div className="col-span-2">
-                  <span className="block text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">
-                    CPV Klassifikation
-                  </span>
-                  <span className="text-gray-800 bg-white px-2 py-1 rounded border border-gray-200 inline-block text-sm">
-                    {selectedTender.CPV_Description}
-                  </span>
-                </div>
-              </div>
-
+              {/* Also kept link here just in case */}
+              <a href={selectedTender.ExternalURI} target="_blank" className="original-link">Åbn på TED Portal →</a>
               <div className="article-prose">
-                <h3 className="text-lg font-bold mb-2 text-[#1B264F]">
-                  Beskrivelse
-                </h3>
-                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                  {selectedTender.Description}
-                </p>
+                  <p className="text-gray-700 whitespace-pre-wrap">{selectedTender.Description}</p>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- STYLES (Reused from News Page) --- */}
       <style jsx global>{`
-        :root {
-          --brand-navy: #1b264f;
-          --brand-red: #c01b2e;
-          --bg-page: #f8f9fa;
-          --bg-card: #ffffff;
-          --text-main: #111827;
-          --text-muted: #6b7280;
-          --border-light: #e5e7eb;
-        }
-        body {
-          margin: 0;
-          font-family: "Inter", sans-serif;
-          background-color: var(--bg-page);
-          color: var(--text-main);
-        }
-        .page-wrapper {
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-        }
-
+        :root { --brand-navy: #1B264F; --brand-red: #C01B2E; --bg-page: #F3F4F6; --text-main: #111827; --text-muted: #6B7280; }
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-page); color: var(--text-main); }
+        .page-wrapper { min-height: 100vh; display: flex; flex-direction: column; }
+        
         /* HEADER */
-        .header-bg {
-          background-color: var(--brand-navy);
-          color: white;
-          padding: 60px 20px 80px 20px;
-        }
-        .header-content {
-          max-width: 1280px;
-          margin: 0 auto;
-          text-align: center;
-        }
-        .header-top {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 30px;
-        }
-        .back-link {
-          color: rgba(255, 255, 255, 0.7);
-          text-decoration: none;
-          font-size: 0.9rem;
-          font-weight: 500;
-          transition: color 0.2s;
-        }
-        .back-link:hover {
-          color: white;
-        }
-        .brand-tag {
-          background: rgba(255, 255, 255, 0.1);
-          color: white;
-          font-size: 0.7rem;
-          font-weight: 700;
-          padding: 4px 10px;
-          border-radius: 4px;
-          letter-spacing: 0.05em;
-        }
-        h1 {
-          font-size: 3rem;
-          font-weight: 700;
-          margin: 0 0 10px 0;
-          letter-spacing: -0.02em;
-        }
-        .header-content p {
-          color: rgba(255, 255, 255, 0.8);
-          font-size: 1.25rem;
-          font-weight: 300;
-          margin: 0;
+        .header-bg { background-color: var(--brand-navy); color: white; padding: 40px 20px 60px 20px; }
+        .header-content { max-width: 1400px; margin: 0 auto; width: 100%; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .back-link { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
+        .brand-tag { background: rgba(255,255,255,0.1); color: white; font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 4px; }
+        h1 { font-size: 2.5rem; font-weight: 700; margin: 0; }
+        
+        /* LIST LAYOUT */
+        .main-container { max-width: 1400px; margin: -40px auto 0 auto; padding: 0 20px 40px 20px; width: 100%; box-sizing: border-box; }
+        .list-wrapper { display: flex; flex-direction: column; gap: 16px; }
+        
+        .list-item { 
+            background: white; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+            display: flex; 
+            flex-direction: row; 
+            overflow: hidden;
+            border: 1px solid #E5E7EB;
         }
 
-        /* GRID & CARDS */
-        .main-container {
-          max-width: 1280px;
-          margin: -40px auto 0 auto;
-          padding: 0 20px 40px 20px;
-          width: 100%;
-          box-sizing: border-box;
+        /* LEFT COLUMN */
+        .item-left { 
+            width: 140px; 
+            background: #F9FAFB; 
+            border-right: 1px solid #E5E7EB; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            padding: 16px;
+            flex-shrink: 0;
+            text-align: center;
         }
-        .grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-          gap: 32px;
+        .status-badge { 
+            font-size: 0.7rem; font-weight: 800; text-transform: uppercase; 
+            padding: 4px 8px; border-radius: 4px; margin-bottom: 10px;
         }
-        .card {
-          background: var(--bg-card);
-          border-radius: 12px;
-          overflow: hidden;
-          border: 1px solid rgba(0, 0, 0, 0.05);
-          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-          transition: all 0.3s ease;
-          display: flex;
-          flex-direction: column;
+        .status-badge.open { background: #D1FAE5; color: #065F46; }
+        .status-badge.closed { background: #FEE2E2; color: #991B1B; }
+        
+        .date-block { display: flex; flex-direction: column; margin-bottom: 12px; }
+        .date-block .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+        .date-block .date-val { font-size: 0.9rem; font-weight: 500; color: var(--text-main); }
+        
+        /* NEW TED BUTTON */
+        .btn-ted-link {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #2563EB;
+            text-decoration: none;
+            border: 1px solid #BFDBFE;
+            background: #EFF6FF;
+            padding: 4px 12px;
+            border-radius: 4px;
+            transition: all 0.2s;
         }
-        .card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-        }
-        .card-image-wrapper {
-          position: relative;
-          background: #e5e7eb;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .card-source-badge {
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          font-size: 0.7rem;
-          font-weight: 700;
-          text-transform: uppercase;
-          padding: 4px 8px;
-          border-radius: 4px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        .btn-ted-link:hover {
+            background: #DBEAFE;
+            border-color: #3B82F6;
         }
 
-        .card-body {
-          padding: 24px;
-          display: flex;
-          flex-direction: column;
-          flex-grow: 1;
+        /* MAIN COLUMN */
+        .item-main { 
+            flex-grow: 1; 
+            padding: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 8px;
         }
-        .meta-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 12px;
-          font-size: 0.75rem;
-        }
-        .date {
-          color: var(--text-muted);
-          font-weight: 500;
-        }
-        .card-title {
-          font-size: 1.25rem;
-          font-weight: 700;
-          line-height: 1.3;
-          margin: 0 0 12px 0;
-          color: var(--text-main);
-        }
-        .card-summary {
-          font-size: 0.95rem;
-          line-height: 1.6;
-          color: var(--text-muted);
-          margin-bottom: 20px;
-          flex-grow: 1;
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
+        .tags-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+        .tag-found-via { background: #E0F2FE; color: #075985; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+        .tag-cpv { background: #F3F4F6; color: #374151; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; border: 1px solid #E5E7EB; }
+        
+        .item-title { font-size: 1.15rem; font-weight: 700; color: var(--brand-navy); margin: 0; cursor: pointer; }
+        .item-title:hover { text-decoration: underline; }
+        
+        .buyer-row { font-size: 0.85rem; color: #4B5563; font-weight: 500; display: flex; align-items: center; gap: 12px; }
+        .country-tag { font-weight: 600; color: var(--text-main); background: #F3F4F6; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;}
+        
+        .item-desc { font-size: 0.9rem; color: var(--text-muted); margin: 0; line-height: 1.5; }
+        .read-more { color: var(--brand-navy); font-size: 0.8rem; font-weight: 600; cursor: pointer; margin-left: 8px; }
 
-        /* WORKFLOW & INPUTS */
-        .workflow-area {
-          background-color: #f9fafb;
-          border-top: 1px solid #e5e7eb;
-          margin: auto -24px -24px -24px;
-          padding: 20px;
+        /* RIGHT COLUMN */
+        .item-right { 
+            width: 280px; 
+            background: white; 
+            border-left: 1px solid #E5E7EB; 
+            padding: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-between;
+            flex-shrink: 0;
         }
-        .input-label {
-          display: block;
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: var(--text-muted);
-          margin-bottom: 6px;
-          text-transform: uppercase;
-        }
-        .category-input {
-          width: 100%;
-          padding: 10px;
-          border: 1px solid #d1d5db;
-          border-radius: 6px;
-          font-size: 0.9rem;
-          margin-bottom: 12px;
-          box-sizing: border-box;
-        }
-        .button-row {
-          display: flex;
-          gap: 10px;
-        }
-        .btn-icon.delete {
-          background: #fef2f2;
-          color: #ef4444;
-          border: 1px solid #fca5a5;
-          border-radius: 6px;
-          width: 42px;
-          height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          flex-shrink: 0;
-          font-size: 1.2rem;
-        }
-        .btn-action.resolve {
-          background: #10b981;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          padding: 0 20px;
-          font-weight: 600;
-          font-size: 0.9rem;
-          cursor: pointer;
-          flex-grow: 1;
-          transition: opacity 0.2s;
-        }
-        .btn-action.resolve:disabled {
-          background: #d1d5db;
-          cursor: not-allowed;
-        }
+        .value-display { font-size: 1.1rem; font-weight: 700; color: var(--brand-red); text-align: right; margin-bottom: 10px; }
+        
+        .workflow-box { display: flex; flex-direction: column; gap: 8px; }
+        .workflow-input { width: 100%; padding: 8px; font-size: 0.85rem; border: 1px solid #D1D5DB; border-radius: 4px; }
+        .workflow-buttons { display: flex; gap: 8px; }
+        .btn-del { width: 36px; background: #FEF2F2; color: #EF4444; border: 1px solid #FCA5A5; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .btn-approve { flex: 1; background: #10B981; color: white; border: none; border-radius: 4px; font-weight: 600; font-size: 0.85rem; padding: 8px; cursor: pointer; }
+        .btn-approve:disabled { background: #D1D5DB; cursor: not-allowed; }
 
-        /* MODALS */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: rgba(27, 38, 79, 0.6);
-          backdrop-filter: blur(4px);
-          z-index: 1000;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          padding: 20px;
-          animation: fadeIn 0.2s ease-out;
-        }
-        .modal-content {
-          background: white;
-          width: 100%;
-          max-width: 750px;
-          max-height: 85vh;
-          border-radius: 16px;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          animation: slideUp 0.3s ease-out;
-        }
-        .modal-header {
-          padding: 20px 30px;
-          border-bottom: 1px solid var(--border-light);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: #fafafa;
-        }
-        .modal-meta {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-          font-size: 0.85rem;
-          color: var(--text-muted);
-        }
-        .modal-source {
-          font-weight: 700;
-          color: var(--brand-navy);
-          text-transform: uppercase;
-        }
-        .btn-close {
-          background: none;
-          border: none;
-          font-weight: 600;
-          color: var(--text-muted);
-          cursor: pointer;
-        }
-        .modal-scroll-area {
-          padding: 40px;
-          overflow-y: auto;
-        }
-        .modal-title {
-          font-size: 2rem;
-          font-weight: 800;
-          line-height: 1.2;
-          margin: 0 0 10px 0;
-          color: var(--brand-navy);
-        }
-        .original-link {
-          display: inline-block;
-          color: var(--brand-red);
-          margin-bottom: 30px;
-          text-decoration: none;
-          font-weight: 600;
-        }
-
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-        @keyframes slideUp {
-          from {
-            transform: translateY(20px);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
+        /* MODAL */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
+        .modal-content { background: white; width: 90%; max-width: 800px; max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+        .modal-header { padding: 20px; border-bottom: 1px solid #E5E7EB; display: flex; justify-content: space-between; }
+        .modal-scroll-area { padding: 30px; overflow-y: auto; }
+        .article-prose { font-size: 1rem; line-height: 1.6; color: #374151; }
+        .original-link { display: inline-block; color: var(--brand-red); margin-bottom: 30px; text-decoration: none; font-weight: 600; }
       `}</style>
     </main>
   );
