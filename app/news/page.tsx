@@ -2,10 +2,10 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy, writeBatch, deleteDoc, doc } from 'firebase/firestore';
-import { sendBacklogEmail } from "@/app/actions";
+import { sendBacklogEmail } from "@/app/news-actions";
 // newsData importen slettet, da den ikke bruges
 
-interface NewsArticle {
+interface BusinessOpportunity {
   id: string;
   title: string;
   source: string;
@@ -19,9 +19,9 @@ interface NewsArticle {
   tags: string[];
 }
 
-export default function NewsPage() {
-  const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
-  const [news, setNews] = useState<NewsArticle[]>([]); 
+export default function BusinessOpportunityPage() {
+  const [selectedArticle, setSelectedArticle] = useState<BusinessOpportunity | null>(null);
+  const [news, setNews] = useState<BusinessOpportunity[]>([]); 
   const [loading, setLoading] = useState(true);
 
   // <--- ÆNDRET: Vi gemmer nu input for ALLE artikler i et objekt, i stedet for én streng
@@ -38,7 +38,7 @@ export default function NewsPage() {
         const articles = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        })) as NewsArticle[];
+        })) as BusinessOpportunity[];
 
         setNews(articles);
       } catch (error) {
@@ -61,7 +61,7 @@ export default function NewsPage() {
     }));
   };
 
-  const handleResolve = async (article: NewsArticle) => {
+  const handleResolve = async (article: BusinessOpportunity) => {
     // <--- ÆNDRET: Henter inputtet specifikt for denne artikel
     const currentInput = categoryInputs[article.id] || "";
 
@@ -108,7 +108,7 @@ export default function NewsPage() {
     }
   };
 
-  const handleDelete = async (article: NewsArticle) => {
+  const handleDelete = async (article: BusinessOpportunity) => {
     if (!confirm("Er du sikker? Slettes permanent.")) return;
 
     try {
