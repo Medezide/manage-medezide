@@ -49,9 +49,9 @@ export const COUNTRY_MAPPING: Record<string, string> = {
     "IRL": "Ireland", "MLT": "Malta", "MKD": "North Macedonia", 
     "ROU": "Romania", "BEL": "Belgium", "NLD": "Netherlands",
     "ESP": "Spain", "PRT": "Portugal", "FIN": "Finland",
-    "GRC": "Greece", "LUX": "Luxembourg", "NOR": "Norway",
-    "DNK": "Denmark", "DEU": "Germany", "FRA": "France",
-    "SWE": "Sweden", "ITA": "Italy", "UK": "United Kingdom",
+    "GRC": "Greece", "LUX": "Luxembourg", "NOR": "Norway", "CZE": "Czech Republic",
+    "DNK": "Denmark", "DEU": "Germany", "FRA": "France", "SVK": "Slovakia",
+    "SWE": "Sweden", "ITA": "Italy", "UK": "United Kingdom", "SVN": "Slovenia",
     "EST": "Estonia", "LVA": "Latvia", "LTU": "Lithuania", "POL": "Poland", "CHE": "Switzerland"
 };
 

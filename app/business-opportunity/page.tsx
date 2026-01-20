@@ -20,8 +20,8 @@ interface Tender {
   CPV: string;
   CPV_Description: string;
   MatchedTrigger?: string;
-  assigned_categories?: string;
-  translated_description?: string; // <--- New field for cached translation
+  internal_note?: string; // Renamed from assigned_categories
+  translated_description?: string; 
 }
 
 export default function BusinessOpportunityPage() {
@@ -29,24 +29,26 @@ export default function BusinessOpportunityPage() {
   const [loading, setLoading] = useState(true);
   
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
-  const [categoryInputs, setCategoryInputs] = useState<{[key: string]: string}>({}); 
+  // Input state: Key = Tender ID, Value = Note text
+  const [noteInputs, setNoteInputs] = useState<{[key: string]: string}>({}); 
 
   const [showFetchModal, setShowFetchModal] = useState(false);
   const [isFetchingAPI, setIsFetchingAPI] = useState(false);
+  
+  // Search State
   const [searchConfig, setSearchConfig] = useState({ 
     query: '', 
     cpvCode: '', 
+    noticeId: '', // New field
     daysBack: 3,
     limit: 10
   });
 
-  // --- TRANSLATION STATE ---
+  // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
 
-  // Helper: Open modal and check for existing translation
   const openModal = (tender: Tender) => {
-      // If the tender already has a saved translation, show it immediately
       if (tender.translated_description) {
           setTranslatedDesc(tender.translated_description);
       } else {
@@ -80,9 +82,16 @@ export default function BusinessOpportunityPage() {
   const handleApiFetch = async () => {
     setIsFetchingAPI(true);
     try {
+      // @ts-ignore - Ignore type check temporarily during update
       const result = await fetchAndSaveTenders(searchConfig);
+      
       if(result.success) {
-        alert(result.message);
+        alert(
+            `✅ Success!\n\n` +
+            `Hentet: ${result.count} nye\n` +
+            `Dubletter ignoreret: ${result.duplicates}\n` +
+            `Total fundet på TED: ${result.totalFound}\n` 
+        );
         setShowFetchModal(false);
         fetchDbTenders(); 
       } else {
@@ -98,20 +107,45 @@ export default function BusinessOpportunityPage() {
 
   // --- 3. WORKFLOW ACTIONS ---
   const handleInputChange = (id: string, value: string) => {
-    setCategoryInputs(prev => ({ ...prev, [id]: value }));
+    setNoteInputs(prev => ({ ...prev, [id]: value }));
   };
 
-  const handleDelete = async (item: Tender) => {
-    if (!confirm(`Slet tender ${item.NoticeID} permanent?`)) return;
+  // NEW: Discard Logic (Moves to tender-discarded)
+  const handleDiscard = async (item: Tender) => {
+    if (!confirm(`Vil du arkivere ${item.NoticeID} som ikke-relevant?`)) return;
+    
+    const note = noteInputs[item.id!] || "";
+
     try {
-        await deleteDoc(doc(db, "tender-unresolved", item.id!));
+        const batch = writeBatch(db);
+        const newRef = doc(db, "tender-discarded", item.id!); // New collection
+        const originalRef = doc(db, "tender-unresolved", item.id!);
+
+        batch.set(newRef, { 
+            ...item, 
+            internal_note: note, // Save the note (why it was discarded)
+            discarded_at: new Date().toISOString() 
+        });
+        batch.delete(originalRef);
+        
+        await batch.commit();
         setTenders(prev => prev.filter(t => t.id !== item.id));
-    } catch (e) { alert("Kunne ikke slette."); }
+        
+        // Clean up input
+        const newInputs = {...noteInputs};
+        delete newInputs[item.id!];
+        setNoteInputs(newInputs);
+
+    } catch (e) { 
+        console.error(e);
+        alert("Kunne ikke arkivere."); 
+    }
   };
 
+  // Approve Logic (Moves to tender-resolved)
   const handleResolve = async (item: Tender) => {
-    const input = categoryInputs[item.id!] || "";
-    if (!input.trim()) { alert("Indtast kategori først."); return; }
+    // Note is now optional for approval, but we still save it if present
+    const note = noteInputs[item.id!] || "";
     
     try {
         const batch = writeBatch(db);
@@ -120,7 +154,7 @@ export default function BusinessOpportunityPage() {
 
         batch.set(newRef, { 
             ...item, 
-            assigned_categories: input, 
+            internal_note: note, 
             resolved_at: new Date().toISOString() 
         });
         batch.delete(originalRef);
@@ -128,9 +162,9 @@ export default function BusinessOpportunityPage() {
         await batch.commit();
         setTenders(prev => prev.filter(t => t.id !== item.id));
         
-        const newInputs = {...categoryInputs};
+        const newInputs = {...noteInputs};
         delete newInputs[item.id!];
-        setCategoryInputs(newInputs);
+        setNoteInputs(newInputs);
 
     } catch (error) {
         console.error("Fejl:", error);
@@ -148,8 +182,7 @@ export default function BusinessOpportunityPage() {
 
   return (
     <main className="page-wrapper">
-      
-      {/* --- HEADER --- */}
+      {/* HEADER */}
       <div className="header-bg">
           <header className="header-content">
             <div className="header-top">
@@ -171,41 +204,29 @@ export default function BusinessOpportunityPage() {
           </header>
       </div>
 
-      {/* --- MAIN LIST CONTAINER --- */}
+      {/* LIST CONTAINER */}
       <div className="main-container">
         <div className="list-wrapper">
             {tenders.map((tender) => (
             <article key={tender.id} className="list-item">
                 
-                {/* LEFT: STATUS, DATE & TED LINK */}
                 <div className="item-left">
                     <div className={`status-badge ${tender.TenderStatus === 'Open' ? 'open' : 'closed'}`}>
                         {tender.TenderStatus}
                     </div>
-                    
                     <div className="date-block">
                         <span className="label">Deadline</span>
                         <span className={`date-val ${isDateCritical(tender.TenderApplicationDate) ? 'text-red-600 font-bold' : ''}`}>
                             {tender.TenderApplicationDate}
                         </span>
                     </div>
-
-                    <a 
-                        href={tender.ExternalURI} 
-                        target="_blank" 
-                        className="btn-ted-link"
-                        title="Åbn originalt udbud på TED"
-                    >
-                        TED ↗
-                    </a>
+                    <a href={tender.ExternalURI} target="_blank" className="btn-ted-link">TED ↗</a>
                 </div>
 
-                {/* MIDDLE: MAIN CONTENT */}
                 <div className="item-main">
                     <h2 className="item-title" onClick={() => openModal(tender)}>
                         {tender.Title}
                     </h2>
-                    {/* CPV Row */}
                     <div className="tags-row">
                         {tender.MatchedTrigger && (
                             <span className="tag-found-via">
@@ -218,18 +239,14 @@ export default function BusinessOpportunityPage() {
                     </div>
                     <div className="buyer-row">
                         <span className="buyer-name">🏢 {tender.BuyerName}</span>
-                        <span className="country-tag">
-                           🌍 {tender.BuyerCountry}
-                        </span>
+                        <span className="country-tag">🌍 {tender.BuyerCountry}</span>
                     </div>
-
                     <p className="item-desc">
                         {tender.Description?.substring(0, 180)}...
                         <span className="read-more" onClick={() => openModal(tender)}>Læs mere</span>
                     </p>
                 </div>
 
-                {/* RIGHT: ACTION WORKFLOW */}
                 <div className="item-right">
                     <div className="value-display">
                         {tender.EstimatedValue !== 'N/A' && tender.EstimatedValue}
@@ -239,16 +256,19 @@ export default function BusinessOpportunityPage() {
                         <input 
                             type="text" 
                             className="workflow-input"
-                            placeholder="Notat / Kategori..."
-                            value={categoryInputs[tender.id!] || ""}
+                            placeholder="Note (Valgfri)..."
+                            value={noteInputs[tender.id!] || ""}
                             onChange={(e) => handleInputChange(tender.id!, e.target.value)}
                         />
                         <div className="workflow-buttons">
-                            <button onClick={() => handleDelete(tender)} className="btn-del" title="Slet">🗑</button>
+                            {/* Discard Button */}
+                            <button onClick={() => handleDiscard(tender)} className="btn-del" title="Arkivér som irrelevant">
+                                🗑
+                            </button>
+                            {/* Approve Button */}
                             <button 
                                 onClick={() => handleResolve(tender)} 
                                 className="btn-approve"
-                                disabled={!(categoryInputs[tender.id!] || "").trim()}
                             >
                                 ✓ Godkend
                             </button>
@@ -261,7 +281,7 @@ export default function BusinessOpportunityPage() {
         </div>
       </div>
 
-      {/* --- SEARCH MODAL --- */}
+      {/* MODAL: SEARCH CONFIG */}
       {showFetchModal && (
         <div className="modal-overlay" onClick={() => !isFetchingAPI && setShowFetchModal(false)}>
             <div className="modal-content" style={{maxWidth: '500px', overflow: 'visible'}} onClick={e => e.stopPropagation()}>
@@ -270,18 +290,40 @@ export default function BusinessOpportunityPage() {
                     {!isFetchingAPI && <button className="btn-close" onClick={() => setShowFetchModal(false)}>Luk</button>}
                 </div>
                 <div className="p-6">
+                    
+                    {/* NOTICE ID SEARCH */}
+                    <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded">
+                        <label className="block text-sm font-bold text-blue-900 mb-2">Søg på specifikt ID</label>
+                        <input 
+                            type="text" 
+                            className="w-full p-2 border border-blue-200 rounded text-sm"
+                            placeholder="Fx. 42229-2026 (Overskriver andre filtre)"
+                            value={searchConfig.noticeId}
+                            onChange={(e) => setSearchConfig({...searchConfig, noticeId: e.target.value})}
+                        />
+                    </div>
+
                     <div className="mb-4">
-                        <label className="block text-sm font-bold text-gray-700 mb-2">Søgeord</label>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">Søgeord (Fritekst)</label>
                         <input type="text" className="w-full p-2 border rounded" placeholder="Antimicrobial..." 
-                            value={searchConfig.query} onChange={(e) => setSearchConfig({...searchConfig, query: e.target.value})} />
+                            value={searchConfig.query} onChange={(e) => setSearchConfig({...searchConfig, query: e.target.value})} 
+                            disabled={!!searchConfig.noticeId}
+                        />
                     </div>
                     <div className="grid grid-cols-2 gap-4 mb-6">
                         <div>
                             <label className="block text-sm font-bold text-gray-700 mb-2">Periode</label>
-                            <select className="w-full p-2 border rounded bg-white" value={searchConfig.daysBack} onChange={(e) => setSearchConfig({...searchConfig, daysBack: parseInt(e.target.value)})}>
+                            <select 
+                                className="w-full p-2 border rounded bg-white" 
+                                value={searchConfig.daysBack} 
+                                onChange={(e) => setSearchConfig({...searchConfig, daysBack: parseInt(e.target.value)})}
+                                disabled={!!searchConfig.noticeId}
+                            >
                                 <option value={1}>I dag</option>
                                 <option value={3}>3 dage</option>
                                 <option value={7}>1 uge</option>
+                                <option value={14}>2 uger</option>
+                                <option value={-1}>Altid (Ingen dato)</option> {/* NEW */}
                             </select>
                         </div>
                         <div>
@@ -297,7 +339,7 @@ export default function BusinessOpportunityPage() {
         </div>
       )}
 
-      {/* --- DETAIL MODAL WITH TRANSLATION --- */}
+      {/* MODAL: DETAIL WITH TRANSLATION */}
       {selectedTender && (
         <div className="modal-overlay" onClick={() => setSelectedTender(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -310,39 +352,27 @@ export default function BusinessOpportunityPage() {
             </div>
             
             <div className="modal-scroll-area">
-              
               <div className="flex justify-between items-start gap-4 mb-4">
                   <h2 className="modal-title flex-1">{selectedTender.Title}</h2>
-                  
-                  {/* TRANSLATE BUTTON */}
                   <button 
                     onClick={async () => {
-                        // Logic: Toggle off if currently showing translation
                         if (translatedDesc) {
                             setTranslatedDesc(null);
                         } else {
-                            // If we already have a saved translation in the object, use it directly (no API call)
                             if (selectedTender.translated_description) {
                                 setTranslatedDesc(selectedTender.translated_description);
                             } else {
-                                // Fetch translation from Server Action
                                 setIsTranslating(true);
                                 const res = await translateText(selectedTender.Description, selectedTender.NoticeID);
                                 setIsTranslating(false);
-                                
                                 if (res.success && res.text) {
                                     setTranslatedDesc(res.text);
-                                    
-                                    // Update local state so we don't need to refresh to see it cached
                                     setTenders(prev => prev.map(t => 
                                         t.NoticeID === selectedTender.NoticeID 
                                         ? { ...t, translated_description: res.text } 
                                         : t
                                     ));
-                                    
-                                    // Update current selected tender object
                                     setSelectedTender(prev => prev ? ({ ...prev, translated_description: res.text }) : null);
-
                                 } else {
                                     alert("Oversættelse fejlede: " + res.text);
                                 }
@@ -354,18 +384,10 @@ export default function BusinessOpportunityPage() {
                         ${translatedDesc ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}
                     `}
                   >
-                    {isTranslating ? (
-                        <span>Oversætter... ⏳</span>
-                    ) : translatedDesc ? (
-                        <><span>↺ Vis Original</span></>
-                    ) : (
-                        <><span>A→Z</span> <span>Oversæt til Engelsk</span></>
-                    )}
+                    {isTranslating ? <span>Oversætter... ⏳</span> : translatedDesc ? <><span>↺ Vis Original</span></> : <><span>A→Z</span> <span>Oversæt til Engelsk</span></>}
                   </button>
               </div>
-
               <a href={selectedTender.ExternalURI} target="_blank" className="original-link">Åbn på TED Portal →</a>
-              
               <div className="article-prose">
                   {translatedDesc ? (
                       <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 animate-in fade-in">
@@ -385,112 +407,42 @@ export default function BusinessOpportunityPage() {
         button { cursor: pointer; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-page); color: var(--text-main); }
         .page-wrapper { min-height: 100vh; display: flex; flex-direction: column; }
-        
-        /* HEADER */
         .header-bg { background-color: var(--brand-navy); color: white; padding: 40px 20px 60px 20px; }
         .header-content { max-width: 1400px; margin: 0 auto; width: 100%; }
         .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .back-link { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
         .brand-tag { background: rgba(255,255,255,0.1); color: white; font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 4px; }
         h1 { font-size: 2.5rem; font-weight: 700; margin: 0; }
-        
-        /* LIST LAYOUT */
         .main-container { max-width: 1400px; margin: -40px auto 0 auto; padding: 0 20px 40px 20px; width: 100%; box-sizing: border-box; }
         .list-wrapper { display: flex; flex-direction: column; gap: 16px; }
-        
-        .list-item { 
-            background: white; 
-            border-radius: 8px; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
-            display: flex; 
-            flex-direction: row; 
-            overflow: hidden;
-            border: 1px solid #E5E7EB;
-        }
-
-        /* LEFT COLUMN */
-        .item-left { 
-            width: 140px; 
-            background: #F9FAFB; 
-            border-right: 1px solid #E5E7EB; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: center; 
-            align-items: center; 
-            padding: 16px;
-            flex-shrink: 0;
-            text-align: center;
-        }
-        .status-badge { 
-            font-size: 0.7rem; font-weight: 800; text-transform: uppercase; 
-            padding: 4px 8px; border-radius: 4px; margin-bottom: 10px;
-        }
+        .list-item { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; flex-direction: row; overflow: hidden; border: 1px solid #E5E7EB; }
+        .item-left { width: 140px; background: #F9FAFB; border-right: 1px solid #E5E7EB; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 16px; flex-shrink: 0; text-align: center; }
+        .status-badge { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; margin-bottom: 10px; }
         .status-badge.open { background: #D1FAE5; color: #065F46; }
         .status-badge.closed { background: #FEE2E2; color: #991B1B; }
-        
         .date-block { display: flex; flex-direction: column; margin-bottom: 12px; }
         .date-block .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
         .date-block .date-val { font-size: 0.9rem; font-weight: 500; color: var(--text-main); }
-        
-        /* NEW TED BUTTON */
-        .btn-ted-link {
-            font-size: 0.75rem;
-            font-weight: 700;
-            color: #2563EB;
-            text-decoration: none;
-            border: 1px solid #BFDBFE;
-            background: #EFF6FF;
-            padding: 4px 12px;
-            border-radius: 4px;
-            transition: all 0.2s;
-        }
-        .btn-ted-link:hover {
-            background: #DBEAFE;
-            border-color: #3B82F6;
-        }
-
-        /* MAIN COLUMN */
-        .item-main { 
-            flex-grow: 1; 
-            padding: 20px; 
-            display: flex; 
-            flex-direction: column; 
-            gap: 8px;
-        }
+        .btn-ted-link { font-size: 0.75rem; font-weight: 700; color: #2563EB; text-decoration: none; border: 1px solid #BFDBFE; background: #EFF6FF; padding: 4px 12px; border-radius: 4px; transition: all 0.2s; }
+        .btn-ted-link:hover { background: #DBEAFE; border-color: #3B82F6; }
+        .item-main { flex-grow: 1; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
         .tags-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; align-items: center; }
         .tag-found-via { background: #E0F2FE; color: #075985; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
         .tag-cpv { background: #F3F4F6; color: #374151; font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; border: 1px solid #E5E7EB; }
-        
         .item-title { font-size: 1.15rem; font-weight: 700; color: var(--brand-navy); margin: 0; cursor: pointer; }
         .item-title:hover { text-decoration: underline; }
-        
         .buyer-row { font-size: 0.85rem; color: #4B5563; font-weight: 500; display: flex; align-items: center; gap: 12px; }
         .country-tag { font-weight: 600; color: var(--text-main); background: #F3F4F6; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;}
-        
         .item-desc { font-size: 0.9rem; color: var(--text-muted); margin: 0; line-height: 1.5; }
         .read-more { color: var(--brand-navy); font-size: 0.8rem; font-weight: 600; cursor: pointer; margin-left: 8px; }
-
-        /* RIGHT COLUMN */
-        .item-right { 
-            width: 280px; 
-            background: white; 
-            border-left: 1px solid #E5E7EB; 
-            padding: 20px; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: space-between;
-            flex-shrink: 0;
-        }
+        .item-right { width: 280px; background: white; border-left: 1px solid #E5E7EB; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; flex-shrink: 0; }
         .value-display { font-size: 1.1rem; font-weight: 700; color: var(--brand-red); text-align: right; margin-bottom: 10px; }
-        
         .workflow-box { display: flex; flex-direction: column; gap: 8px; }
         .workflow-input { width: 100%; padding: 8px; font-size: 0.85rem; border: 1px solid #D1D5DB; border-radius: 4px; }
         .workflow-buttons { display: flex; gap: 8px; }
         .btn-del { width: 36px; background: #FEF2F2; color: #EF4444; border: 1px solid #FCA5A5; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .btn-approve { flex: 1; background: #10B981; color: white; border: none; border-radius: 4px; font-weight: 600; font-size: 0.85rem; padding: 8px; cursor: pointer; }
         .btn-approve:disabled { background: #D1D5DB; cursor: not-allowed; }
-
-        /* MODAL */
         .modal-meta { display: flex; flex-direction: row; gap: 25px; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
         .modal-content { background: white; width: 90%; max-width: 800px; max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
