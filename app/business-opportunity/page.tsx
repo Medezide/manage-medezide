@@ -44,9 +44,9 @@ export default function BusinessOpportunityPage() {
   const [showFetchModal, setShowFetchModal] = useState(false);
   const [isFetchingAPI, setIsFetchingAPI] = useState(false);
   const [searchConfig, setSearchConfig] = useState({
-    query: "Medical Consumables",
-    cpvCode: "",
+    query: "", // Removed default text to allow broad search
     daysBack: 3,
+    limit: 5,
   });
 
   // --- 1. LOAD FROM FIREBASE ---
@@ -287,6 +287,8 @@ export default function BusinessOpportunityPage() {
               )}
             </div>
             <div className="p-6">
+
+              {/* Input: Fritekst */}
               <div className="mb-4">
                 <label className="block text-sm font-bold text-gray-700 mb-2">
                   Søgeord (Fritekst)
@@ -301,7 +303,7 @@ export default function BusinessOpportunityPage() {
                 />
               </div>
 
-              {/* NEW: Days Selector */}
+              {/* Input: Range of days */}
               <div className="mb-4">
                 <label className="block text-sm font-bold text-gray-700 mb-2">
                   Hvor langt tilbage?
@@ -324,19 +326,21 @@ export default function BusinessOpportunityPage() {
                 </select>
               </div>
 
-              <div className="mb-6">
+              {/* Input: Max Antal (Limit) */}
+              <div className="mb-4">
                 <label className="block text-sm font-bold text-gray-700 mb-2">
-                  CPV Kode (Valgfri)
+                  Max Antal (Limit)
                 </label>
                 <input
-                  type="text"
+                  type="number"
+                  min="1"
+                  max="50"
                   className="w-full p-2 border rounded"
-                  placeholder="Fx. 33140000"
-                  value={searchConfig.cpvCode}
+                  value={searchConfig.limit}
                   onChange={(e) =>
                     setSearchConfig({
                       ...searchConfig,
-                      cpvCode: e.target.value,
+                      limit: parseInt(e.target.value),
                     })
                   }
                 />

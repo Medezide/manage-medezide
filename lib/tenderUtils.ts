@@ -73,7 +73,7 @@ function formatCurrency(amount: string | number): string {
 }
 
 // --- MAIN PARSER ---
-// Updated to accept apiDate (optional)
+// CRITICAL: apiDate is passed here to override XML scraping
 export function parseTedXml(xmlContent: string, apiDate?: string) {
     const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text" });
     const result = parser.parse(xmlContent);
@@ -104,21 +104,21 @@ export function parseTedXml(xmlContent: string, apiDate?: string) {
     const currency = getSafeValue(projectNode, ['RequestedTenderTotal', 'EstimatedOverallContractAmount', '@_currencyID']) || 'EUR';
     const estimatedValue = valRaw ? `${formatCurrency(valRaw)} ${currency}` : "N/A";
 
-    // 6. Dates & Status (UPDATED)
+    // 6. Dates & Status (PRIORITIZING API DATA)
     let cleanDate = "N/A";
     
     if (apiDate) {
-        // Use the API date if available (format: 2026-02-17T23:59:00+01:00)
+        // API format is usually "2026-02-17T23:59:00+01:00"
+        // We split at 'T' to get just "2026-02-17"
         cleanDate = apiDate.split('T')[0];
     } else {
-        // Fallback to XML parsing
-        let dateStr = getSafeValue(root, ['IssueDate']); 
+        // Fallback: Try to find deadline in XML if API failed
+        let dateStr = getSafeValue(root, ['IssueDate']);
         const deadline = getSafeValue(root, ['TenderingProcess', 'TenderSubmissionDeadlinePeriod', 'EndDate']);
         if (deadline) dateStr = deadline;
         cleanDate = dateStr ? dateStr.split('+')[0].split('Z')[0] : "N/A";
     }
 
-    // Determine status based on the cleaned date
     const status = new Date(cleanDate) >= new Date() ? "Open" : "Closed";
 
     return {
