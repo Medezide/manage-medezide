@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { fetchAndSaveTenders, translateText } from '@/app/tender-actions';
 import { MONITORED_CPV_CODES, CPV_MAPPING } from '@/lib/tenderUtils';
 
