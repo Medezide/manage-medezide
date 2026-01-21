@@ -4,33 +4,33 @@ import { XMLParser } from 'fast-xml-parser';
 // This allows us to reuse it for the search query AND the matching logic
 export const MONITORED_CPV_CODES = [
     '33651100', '33651200', '33651300', '33651500', '33651600', '33651620', 
-    '33651600', '33651660', '33698100', '38970000', '38433000', '38437000', 
+    '33651660', '33698100', '38970000', '38433000', '38437000', 
     '38910000', '51400000', '72000000', '73000000', '80320000', '80420000', 
     '80430000', '85100000', '85200000', '90720000'
 ];
 
 export const CPV_MAPPING: Record<string, string> = {
     // Medical & Pharma
-    '33651100': 'Antivirals for systemic use',
-    '33651200': 'Antineoplastic agents',
-    '33651300': 'Immunosuppressive agents',
-    '33651500': 'Vaccines',
-    '33651600': 'Vaccines for veterinary medicine',
-    '33651620': 'Bacterial vaccines',
-    '33651660': 'Viral vaccines',
+    '33651100': 'Antibacterials for systemic use',
+    '33651200': 'Antimycotics for systemic use',
+    '33651300': 'Antimycobacterials',
+    '33651500': 'Immune sera and immunoglobulins',
+    '33651600': 'Vaccines',
+    '33651620': 'Diphtheria-tetanus vaccines',
+    '33651660': 'Influenza vaccines',
     '33698100': 'Microbiological cultures',
     '38970000': 'Research, testing and scientific technical simulator',
     '38433000': 'Spectrometers',
     '38437000': 'Laboratory pipettes and accessories',
-    '38910000': 'Hygiene monitoring and testing',
+    '38910000': 'Hygiene monitoring and testing equipment',
     '51400000': 'Installation services of medical and surgical equipment',
     
     // Services & Education
     '72000000': 'IT services: consulting, software development, Internet and support',
-    '73000000': 'Research and development services',
+    '73000000': 'Research and development services and related consultancy services',
     '80320000': 'Medical education services',
     '80420000': 'E-learning services',
-    '80430000': 'Adult education services at university level',
+    '80430000': 'Adult-education services at university level',
     
     // Health & Environment
     '85100000': 'Health services',
@@ -39,9 +39,9 @@ export const CPV_MAPPING: Record<string, string> = {
 
     // Common Fallbacks
     '33140000': 'Medical consumables',
-    '33190000': 'Medical consumables and disposable goods',
-    '33000000': 'Medical equipment, pharmaceuticals and personal care products',
-    '79411000': 'General consultancy services',
+    '33190000': 'Miscellaneous medical devices and products',
+    '33000000': 'Medical equipments, pharmaceuticals and personal care products',
+    '79411000': 'General management consultancy services',
     'default': 'Unmonitored CPV Code'
 };
 

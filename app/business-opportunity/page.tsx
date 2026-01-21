@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, writeBatch, deleteDoc, doc } from 'firebase/firestore';
 import { fetchAndSaveTenders, translateText } from '@/app/tender-actions';
+import { MONITORED_CPV_CODES, CPV_MAPPING } from '@/lib/tenderUtils';
 
 // --- DATA TYPES ---
 interface Tender {
@@ -33,6 +34,7 @@ export default function BusinessOpportunityPage() {
   const [noteInputs, setNoteInputs] = useState<{[key: string]: string}>({}); 
 
   const [showFetchModal, setShowFetchModal] = useState(false);
+  const [showCpvModal, setShowCpvModal] = useState(false);
   const [isFetchingAPI, setIsFetchingAPI] = useState(false);
   
   // Search State
@@ -193,6 +195,12 @@ export default function BusinessOpportunityPage() {
                 <div className="text-left">
                     <h1>Udbudsovervågning</h1>
                     <p>EU Funding & Tenders Pipeline</p>
+                    <button 
+                onClick={() => setShowCpvModal(true)}
+                className="text-xs font-bold text-blue-200 bg-white/10 px-3 py-1 rounded hover:bg-white/20 transition-colors"
+            >
+                ℹ️ Se aktive koder
+            </button>
                 </div>
                 <button 
                     onClick={() => setShowFetchModal(true)}
@@ -339,6 +347,43 @@ export default function BusinessOpportunityPage() {
         </div>
       )}
 
+      {/* MODAL: CPV CODES LIST */}
+      {showCpvModal && (
+        <div className="modal-overlay" onClick={() => setShowCpvModal(false)}>
+            <div className="modal-content" style={{maxWidth: '600px', maxHeight: '80vh'}} onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h3 className="text-xl font-bold text-[#1B264F]">Overvågede CPV Koder</h3>
+                    <button className="btn-close" onClick={() => setShowCpvModal(false)}>Luk</button>
+                </div>
+                <div className="modal-scroll-area p-0">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-100 top-0">
+                            <tr>
+                                <th className="p-4 text-xs font-bold text-gray-500 uppercase border-b">Kode</th>
+                                <th className="p-4 text-xs font-bold text-gray-500 uppercase border-b">Beskrivelse</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {MONITORED_CPV_CODES.map((code, index) => (
+                                <tr key={code} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                                    <td className="p-3 border-b font-mono text-sm font-bold text-blue-800">
+                                        {code}
+                                    </td>
+                                    <td className="p-3 border-b text-sm text-gray-700">
+                                        {CPV_MAPPING[code] || <span className="text-gray-400 italic">Ingen beskrivelse</span>}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <div className="p-4 bg-yellow-50 text-xs text-yellow-800 border-t border-yellow-100">
+                        <strong>Note:</strong> Disse koder bruges til både at filtrere søgninger på TED API'et og til at generere "Matched Trigger" badges på listen.
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* MODAL: DETAIL WITH TRANSLATION */}
       {selectedTender && (
         <div className="modal-overlay" onClick={() => setSelectedTender(null)}>
@@ -413,7 +458,7 @@ export default function BusinessOpportunityPage() {
         .back-link { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
         .brand-tag { background: rgba(255,255,255,0.1); color: white; font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 4px; }
         h1 { font-size: 2.5rem; font-weight: 700; margin: 0; }
-        .main-container { max-width: 1400px; margin: -40px auto 0 auto; padding: 0 20px 40px 20px; width: 100%; box-sizing: border-box; }
+        .main-container { max-width: 1400px; margin: -40px auto 0 auto; padding: 0 0 40px 0; width: 100%; box-sizing: border-box; }
         .list-wrapper { display: flex; flex-direction: column; gap: 16px; }
         .list-item { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; flex-direction: row; overflow: hidden; border: 1px solid #E5E7EB; }
         .item-left { width: 140px; background: #F9FAFB; border-right: 1px solid #E5E7EB; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 16px; flex-shrink: 0; text-align: center; }
@@ -446,7 +491,7 @@ export default function BusinessOpportunityPage() {
         .modal-meta { display: flex; flex-direction: row; gap: 25px; }
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
         .modal-content { background: white; width: 90%; max-width: 800px; max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
-        .modal-header { padding: 20px; border-bottom: 1px solid #E5E7EB; display: flex; justify-content: space-between; }
+        .modal-header { padding: 20px; border-bottom: 1px solid #E5E7EB; display: flex; justify-content: space-between;}
         .modal-scroll-area { padding: 30px; overflow-y: auto; }
         .article-prose { font-size: 1rem; line-height: 1.6; color: #374151; }
         .original-link { display: inline-block; color: var(--brand-red); margin-bottom: 30px; text-decoration: none; font-weight: 600; }
