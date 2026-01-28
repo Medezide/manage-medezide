@@ -233,7 +233,7 @@ export default function BusinessOpportunityPage() {
                             <button 
                                 onClick={() => handleDelete(article)} 
                                 className="btn-icon delete"
-                                title="Slet permanent"
+                                title="Arkiver - ikke relevant"
                             >
                                 🗑
                             </button>
