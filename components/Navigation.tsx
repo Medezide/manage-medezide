@@ -12,6 +12,7 @@ export default function Navigation() {
     { name: 'Dashboard', href: '/' },
     { name: 'News Process', href: '/news' },
     { name: 'Business Opportunity Process', href: '/business-opportunity' },
+    { name: 'Find It', href: '/findit' },
   ];
 
   return (

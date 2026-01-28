@@ -41,7 +41,7 @@ except Exception as e:
 
 # Din Query (Du bruger den Engelske her - hvis du vil have den Nordiske, skal du skifte denne tekst ud)
 DIFFBOT_QUERY = """
-type:Article language:en  or(   title:"Antimicrobial resistance",    tags.label:"Antimicrobial resistance",    title:"Antibiotic resistance",    title:"Superbugs",    text:"Antimicrobial stewardship",    text:"Antibiotic resistance",    text:"Antimicrobial resistance",    text:"multidrug-resistant",    text:"Phage therapy" )  not(title:or("market research", "market size", "sensor", "magnetic", "forecast", "shares"))  not(site:or("surahquran.com", "angi.com", "NewStraitsTimes")) not(pageUrl:"www.nst.com.my") date>"2026-01-17"  sortBy:date"""
+type:Article language:en  or(   title:"Antimicrobial resistance",    tags.label:"Antimicrobial resistance",    title:"Antibiotic resistance",    title:"Superbugs",    text:"Antimicrobial stewardship",    text:"Antibiotic resistance",    text:"Antimicrobial resistance",    text:"multidrug-resistant",    text:"Phage therapy" )  not(title:or("market research", "market size", "sensor", "magnetic", "forecast", "shares"))  not(site:or("surahquran.com", "angi.com", "NewStraitsTimes")) not(pageUrl:"www.nst.com.my") date>"2026-01-22"  sortBy:date"""
 
 AMR_KEYWORDS = [
     "antimicrobial resistance", "antibiotic resistance", "amr", "superbugs", "Superbugs", "Phage therapy", "multidrug-resistant", 
