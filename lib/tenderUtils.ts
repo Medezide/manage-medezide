@@ -5,7 +5,7 @@ import { XMLParser } from 'fast-xml-parser';
 export const MONITORED_CPV_CODES = [
     '33651100', '33651200', '33651300', '33651500', '33651600', '33651620', 
     '33651660', '33698100', '38970000', '38433000', '38437000', 
-    '38910000', '51400000', '72000000', '73000000', '80320000', '80420000', 
+    '38910000', '51400000', '73000000', '80320000', '80420000', 
     '80430000', '85100000', '85200000', '90720000'
 ];
 
@@ -26,7 +26,6 @@ export const CPV_MAPPING: Record<string, string> = {
     '51400000': 'Installation services of medical and surgical equipment',
     
     // Services & Education
-    '72000000': 'IT services: consulting, software development, Internet and support',
     '73000000': 'Research and development services and related consultancy services',
     '80320000': 'Medical education services',
     '80420000': 'E-learning services',
@@ -81,24 +80,26 @@ function formatCurrency(amount: string | number): string {
     } catch { return String(amount); }
 }
 
-// --- HELPER: CHECK IF CPV IS CHILD OF PARENT ---
-// e.g. 72500000 is a child of 72000000
 function isCpvMatch(monitored: string, candidate: string): boolean {
-    // Remove trailing zeros to get the "root" (e.g. 72000000 -> 72)
     const root = monitored.replace(/0+$/, '');
     return candidate.startsWith(root);
 }
 
 // --- MAIN PARSER ---
-// Updated to accept apiCpvs (list of all CPVs from API)
-export function parseTedXml(xmlContent: string, apiDate?: string, apiCpvs?: string[]) {
+// UPDATED: Added apiId as 4th argument
+export function parseTedXml(xmlContent: string, apiDate?: string, apiCpvs?: string[], apiId?: string) {
     const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", textNodeName: "#text" });
     const result = parser.parse(xmlContent);
     const root = result['ContractNotice'] || Object.values(result)[0];
 
     // 1. Identification
     const noticeIdRaw = getSafeValue(root, ['UBLExtensions', 'UBLExtension', 'ExtensionContent', 'EformsExtension', 'Publication', 'NoticePublicationID']);
-    const noticeId = noticeIdRaw ? noticeIdRaw.replace(/^0+/, '') : "N/A";
+    let noticeId = noticeIdRaw ? noticeIdRaw.replace(/^0+/, '') : "N/A";
+
+    // FALLBACK: Use API ID if XML fails
+    if (noticeId === "N/A" && apiId) {
+        noticeId = apiId;
+    }
 
     // 2. Title & Description
     const projectNode = getSafeValue(root, ['ProcurementProject']);
@@ -112,7 +113,7 @@ export function parseTedXml(xmlContent: string, apiDate?: string, apiCpvs?: stri
     const countryCodeRaw = getSafeValue(company, ['PostalAddress', 'Country', 'IdentificationCode']);
     const buyerCountry = COUNTRY_MAPPING[countryCodeRaw] || countryCodeRaw;
 
-    // 4. CPV (Primary from XML)
+    // 4. CPV
     const cpvCode = getSafeValue(projectNode, ['MainCommodityClassification', 'ItemClassificationCode']);
     const cpvDesc = CPV_MAPPING[cpvCode] || CPV_MAPPING['default'];
 
@@ -133,20 +134,15 @@ export function parseTedXml(xmlContent: string, apiDate?: string, apiCpvs?: stri
     }
     const status = new Date(cleanDate) >= new Date() ? "Open" : "Closed";
 
-    // 7. MATCH REASON (The new badge logic)
+    // 7. Match Trigger
     let matchTrigger = null;
-    
-    // We check ALL CPVs from the API against ALL your monitored codes
     if (apiCpvs && apiCpvs.length > 0) {
         for (const candidate of apiCpvs) {
-            // Find which monitored code "covers" this candidate
             const foundParent = MONITORED_CPV_CODES.find(monitored => isCpvMatch(monitored, candidate));
-            
             if (foundParent) {
                 const parentDesc = CPV_MAPPING[foundParent] || "Monitoring";
-                // E.g. "72000000 - IT services..."
                 matchTrigger = `${foundParent} - ${parentDesc}`; 
-                break; // Stop after first match found
+                break; 
             }
         }
     }
@@ -158,7 +154,7 @@ export function parseTedXml(xmlContent: string, apiDate?: string, apiCpvs?: stri
         Description: description || "",
         BuyerName: buyerName || "Unknown Buyer",
         BuyerCountry: buyerCountry || "Unknown",
-        CPV: cpvCode, // Still the primary for display
+        CPV: cpvCode, 
         CPV_Description: `${cpvCode} - ${cpvDesc}`,
         EstimatedValue: estimatedValue,
         TenderStatus: status,
