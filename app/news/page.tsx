@@ -109,15 +109,40 @@ export default function BusinessOpportunityPage() {
   };
 
   const handleDelete = async (article: BusinessOpportunity) => {
-    if (!confirm("Er du sikker? Slettes permanent.")) return;
+    // Ændret besked, så brugeren ved den flyttes i stedet for at slettes permanent
+    if (!confirm("Er du sikker på, at du vil flytte denne nyhed til 'news-discarded'?")) return;
 
     try {
-        await deleteDoc(doc(db, "news-unresolved", article.id));
+        const batch = writeBatch(db);
+        
+        // 1. Find referencerne
+        const originalRef = doc(db, "news-unresolved", article.id);
+        const discardedRef = doc(db, "news-discarded", article.id); // Den nye collection
+
+        // 2. Klargør data (jeg tilføjer et tidsstempel, så I kan se hvornår den blev kasserede)
+        const discardedArticle = {
+            ...article,
+            discarded_at: new Date().toISOString()
+        };
+
+        // 3. Køb flytningen (Kopier til ny -> Slet fra gammel)
+        batch.set(discardedRef, discardedArticle);
+        batch.delete(originalRef);
+
+        // 4. Udfør
+        await batch.commit();
+
+        // 5. Opdater skærmen (fjerner den fra listen)
         setNews(prevNews => prevNews.filter(item => item.id !== article.id));
-        // setSelectedArticle(null) fjernet, da vi sletter direkte fra listen nu
+        
+        // (Valgfrit) Ryd op i input-feltet i hukommelsen, hvis man havde skrevet noget
+        const newInputs = {...categoryInputs};
+        delete newInputs[article.id];
+        setCategoryInputs(newInputs);
+
     } catch (error) {
-        console.error("Fejl ved sletning:", error);
-        alert("Kunne ikke slette nyheden.");
+        console.error("Fejl ved flytning:", error);
+        alert("Kunne ikke flytte nyheden.");
     }
   };
 
