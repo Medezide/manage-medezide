@@ -43,7 +43,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-white text-black">
       <Navigation />
       <main className="flex-1 min-w-0 overflow-auto">
-        <div className="max-w-5xl mx-auto p-12">
+        <div className="mx-auto p-4">
           {children}
         </div>
       </main>

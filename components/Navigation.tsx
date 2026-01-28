@@ -11,6 +11,7 @@ export default function Navigation() {
   const navItems = [
     { name: 'Dashboard', href: '/' },
     { name: 'News Process', href: '/news' },
+    { name: 'Business Opportunity Process', href: '/business-opportunity' },
   ];
 
   return (
